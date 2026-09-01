@@ -76,7 +76,7 @@ describe("primary-flow chrome lock", () => {
   it("does not paint parseSourceUrl as display before preview API", () => {
     const chrome = readFileSync(new URL("./previewChrome.js", import.meta.url), "utf8");
     assert.doesNotMatch(main, /applyPreview\(\s*parseSourceUrl/);
-    assert.match(main, /writeField\(els\.source, result\.source_url\)/);
+    assert.match(main, /writeSourceIfNeeded\(els\.source, result\.source_url\)/);
     assert.match(main, /runPreview\(\)/);
     assert.match(main, /retransApi\.preview\(/);
     assert.match(chrome, /result\.is_live === true/);
@@ -121,8 +121,10 @@ describe("primary-flow chrome lock", () => {
     assert.match(enablement, /state === "live" \|\| state === "error"/);
     assert.match(css, /::placeholder/);
     assert.match(css, /:not\(:placeholder-shown\)/);
-    assert.match(main, /function readField/);
-    assert.match(main, /function writeField/);
+    const fields = readFileSync(new URL("./fields.js", import.meta.url), "utf8");
+    assert.match(fields, /export function readField/);
+    assert.match(fields, /export function writeField/);
+    assert.match(main, /from "\.\/fields\.js"/);
     assert.doesNotMatch(main, /els\.source\.value\s*=\s*["']Paste YouTube live URL["']/);
     assert.doesNotMatch(main, /\.placeholder\s*=/);
     assert.doesNotMatch(css, /input\[type="url"\]/);
