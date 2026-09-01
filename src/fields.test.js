@@ -61,7 +61,7 @@ describe("writeField / readField", () => {
     const el = fakeInput({ value: "", placeholder: SOURCE_PLACEHOLDER });
     writeField(el, "");
     assert.equal(el.value, "");
-    assert.equal(el.getAttribute("placeholder"), "Paste YouTube live URL");
+    assert.equal(el.getAttribute("placeholder"), "Paste YouTube URL");
     assert.equal(el.getAttribute("placeholder"), SOURCE_PLACEHOLDER);
   });
 
@@ -149,7 +149,7 @@ describe("fields wiring lock", () => {
     assert.doesNotMatch(main, /els\.source\.value\s*=\s*["']Paste YouTube live URL["']/);
     assert.doesNotMatch(main, /\.placeholder\s*=/);
     assert.doesNotMatch(fields, /\.placeholder\s*=/);
-    assert.match(html, /placeholder="Paste YouTube live URL"/);
+    assert.match(html, /placeholder="Paste YouTube URL"/);
     assert.match(css, /:not\(:placeholder-shown\)::placeholder/);
     assert.match(css, /#source_url/);
   });

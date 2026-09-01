@@ -80,9 +80,13 @@
             inputmode="url"
             spellcheck="false"
             autocomplete="off"
-            placeholder="Paste YouTube live URL"
+            placeholder="Paste YouTube URL"
           />
-          <button id="preview-btn" type="button">Preview</button>
+          <div class="row">
+            <button id="preview-btn" type="button">Preview</button>
+            <button id="add-url-btn" type="button">Add</button>
+          </div>
+          <ul id="playlist" class="playlist"></ul>
           <p id="paste-helper" class="helper hidden">YouTube first</p>
           <div id="preview-card" class="preview-card hidden" data-preview>
             <div class="preview-filled">
@@ -120,6 +124,7 @@
               </div>
             </div>
           </div>
+          <p id="playlist-now" class="helper hidden"></p>
           <ul id="session-list" class="session-list"></ul>
           <div class="row">
             <button id="start-btn" class="btn-start" type="button" disabled>

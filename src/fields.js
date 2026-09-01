@@ -5,7 +5,7 @@
 
 import { parseSourceUrl } from "./sourceUrl.js";
 
-export const SOURCE_PLACEHOLDER = "Paste YouTube live URL";
+export const SOURCE_PLACEHOLDER = "Paste YouTube URL";
 
 export function readField(el) {
   return el.value;

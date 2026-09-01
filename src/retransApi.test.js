@@ -58,12 +58,19 @@ describe("retransApi lock", () => {
     assert.doesNotMatch(readme, /open the Vite URL/);
   });
 
-  it("start body is source_url + key_id only; stop is session_id or key_id", () => {
-    assert.match(src, /const body = \{ source_url, key_id \}/);
+  it("start body is source_urls[] + key_id or live-only source_url + key_id; never secrets", () => {
+    assert.match(src, /startBody\(\{ source_url, source_urls, key_id \}\)/);
+    assert.match(src, /source_urls/);
+    assert.match(src, /source_index/);
     assert.doesNotMatch(src, /body\.rtmp_url/);
     assert.doesNotMatch(src, /body\.rtmp_key/);
     assert.match(src, /body\.session_id/);
     assert.match(src, /body\.key_id/);
+    const playlist = readFileSync(new URL("./playlist.js", import.meta.url), "utf8");
+    assert.match(playlist, /source_urls: source_urls\.map\(String\), key_id/);
+    assert.match(playlist, /return \{ source_url, key_id \}/);
+    assert.doesNotMatch(playlist, /rtmp_key/);
+    assert.doesNotMatch(playlist, /rtmp_url/);
   });
 
   it("shell does not clip helpers with overflow:hidden", () => {
