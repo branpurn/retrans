@@ -9,6 +9,7 @@ accepted. VOD, clips, upcoming, and ended livestreams are rejected.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from collections.abc import Callable, Sequence
 
@@ -46,9 +47,19 @@ def status_is_live(live_status: str, is_live: object = None) -> bool:
     return False
 
 
-def preview_is_live(live_status: str) -> bool:
-    """Drop-link preview: true only when yt-dlp live_status is exactly is_live."""
-    return (live_status or "").strip() == "is_live"
+def preview_is_live(live_status: str, is_live: object = None) -> bool:
+    """True when live_status is is_live or the JSON is_live field is true.
+
+    live_status may be NA/empty while is_live is true — treat that as live.
+    Confirmed not_live / was_live stay false unless is_live is true.
+    """
+    if (live_status or "").strip() == "is_live":
+        return True
+    if is_live is True:
+        return True
+    if isinstance(is_live, str) and is_live.strip().lower() in _LIVE_BOOL_OK:
+        return True
+    return False
 
 
 def clean_preview_title(title: str) -> str:
@@ -61,7 +72,7 @@ def clean_preview_title(title: str) -> str:
 
 def parse_preview_print(stdout: str) -> tuple[str, str]:
     """Parse yt-dlp --print title --print live_status stdout → (title, live_status)."""
-    lines = [line.strip() for line in (stdout or "").splitlines() if line.strip()]
+    lines = [line.strip() for line in (stdout or "").strip().splitlines() if line.strip()]
     if not lines:
         return "", ""
     if len(lines) == 1:
@@ -70,6 +81,42 @@ def parse_preview_print(stdout: str) -> tuple[str, str]:
             return "", only
         return clean_preview_title(only), ""
     return clean_preview_title("\n".join(lines[:-1])), lines[-1]
+
+
+def _preview_json_object(stdout: str) -> dict:
+    """Load the first JSON object from yt-dlp -J stdout."""
+    text = (stdout or "").strip()
+    if not text:
+        raise ResolveError("yt-dlp preview probe failed: empty json")
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start < 0 or end <= start:
+            raise ResolveError("yt-dlp preview probe failed: invalid json")
+        try:
+            data = json.loads(text[start : end + 1])
+        except json.JSONDecodeError as exc:
+            raise ResolveError("yt-dlp preview probe failed: invalid json") from exc
+    if isinstance(data, dict) and isinstance(data.get("entries"), list) and data["entries"]:
+        first = data["entries"][0]
+        if isinstance(first, dict):
+            data = first
+    if not isinstance(data, dict):
+        raise ResolveError("yt-dlp preview probe failed: invalid json")
+    return data
+
+
+def parse_preview_json(stdout: str) -> tuple[str, str, object]:
+    """Parse yt-dlp -J stdout → (title, live_status, is_live)."""
+    data = _preview_json_object(stdout)
+    raw_title = data.get("title")
+    title = clean_preview_title("" if raw_title is None else str(raw_title))
+    live_status = data.get("live_status")
+    if not isinstance(live_status, str):
+        live_status = ""
+    return title, live_status, data.get("is_live")
 
 
 class StreamResolver:
@@ -106,19 +153,17 @@ class StreamResolver:
         return ""
 
     def preview_meta(self, page_url: str) -> tuple[str, bool]:
-        """Return (title, is_live) via yt-dlp --print. Never starts ffmpeg.
+        """Return (title, is_live) via yt-dlp -J. Never starts ffmpeg.
 
-        is_live is true only when live_status is exactly ``is_live``.
-        Title is "" when unknown. Does not run yt-dlp -g or a restream worker.
+        is_live is true when live_status is ``is_live`` or JSON is_live is true.
+        Title comes from the JSON title field ("" when unknown).
+        Does not run yt-dlp -g or a restream worker.
         """
         try:
             proc = self._run(
                 [
                     "yt-dlp",
-                    "--print",
-                    "title",
-                    "--print",
-                    "live_status",
+                    "-J",
                     "--no-playlist",
                     "--no-warnings",
                     page_url,
@@ -132,8 +177,8 @@ class StreamResolver:
         except subprocess.CalledProcessError as exc:
             stderr = (exc.stderr or "").strip()
             raise ResolveError(f"yt-dlp preview probe failed: {stderr}") from exc
-        title, status = parse_preview_print(proc.stdout or "")
-        return title, preview_is_live(status)
+        title, status, is_live_field = parse_preview_json(proc.stdout or "")
+        return title, preview_is_live(status, is_live_field)
 
     def is_currently_live(self, page_url: str) -> bool:
         """True when yt-dlp reports live_status is_live (or is_live true)."""
