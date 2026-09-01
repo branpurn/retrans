@@ -7,7 +7,7 @@ then streamlink as a fallback. Both are operator-installed CLI tools.
 from __future__ import annotations
 
 import subprocess
-from typing import Callable, Sequence
+from collections.abc import Callable, Sequence
 
 
 class ResolveError(RuntimeError):
@@ -68,6 +68,6 @@ class StreamResolver:
             raise ResolveError(f"{argv[0]} failed: {stderr}") from exc
         for line in (proc.stdout or "").splitlines():
             candidate = line.strip()
-            if candidate.startswith("http://") or candidate.startswith("https://"):
+            if candidate.startswith(("http://", "https://")):
                 return candidate
         raise ResolveError(f"{argv[0]} produced no stream URL")

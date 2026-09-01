@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import retrans.segment as segment
+from retrans import segment
 from retrans.segment import build_clip_cmd, clip_help_epilog
 
 

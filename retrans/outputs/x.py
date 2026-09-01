@@ -18,8 +18,8 @@ import subprocess
 import threading
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 from urllib.parse import urlparse
 
 from retrans.config import X_BEARER_ENV, redact
@@ -115,7 +115,7 @@ class XLiveRestream:
             )
         except RestreamError:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise RestreamError(
                 redact(f"restream failed to start: {exc}", rtmp_url, rtmp_key, dest)
             ) from exc

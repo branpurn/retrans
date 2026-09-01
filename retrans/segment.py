@@ -9,6 +9,8 @@ treat clip upload or clip posts as the product path.
 from __future__ import annotations
 
 import subprocess
+
+
 class ClipError(RuntimeError):
     """Debug clip cut failed."""
 
@@ -62,4 +64,4 @@ def clip_help_epilog() -> str:
     )
 
 
-__all__ = ["ClipError", "build_clip_cmd", "cut_clip", "clip_help_epilog"]
+__all__ = ["ClipError", "build_clip_cmd", "clip_help_epilog", "cut_clip"]
