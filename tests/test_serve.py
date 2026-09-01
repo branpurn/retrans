@@ -19,6 +19,8 @@ from retrans.serve import (
     ensure_loopback_bind,
     make_handler,
     normalize_bind_host,
+    resolve_dist_dir,
+    safe_dist_file,
     validate_start_payload,
 )
 
@@ -305,6 +307,88 @@ def test_no_clip_route(api_factory):
     assert data["ok"] is False
     status, _, _ = _req(port, "GET", "/api/clip")
     assert status == 404
+
+
+def _raw_req(port: int, method: str, path: str):
+    conn = HTTPConnection(LOOPBACK_HOST, port, timeout=5)
+    conn.request(method, path)
+    resp = conn.getresponse()
+    body = resp.read()
+    headers = {k.lower(): v for k, v in resp.getheaders()}
+    conn.close()
+    return resp.status, body, headers
+
+
+def test_get_root_serves_dist_index(api_factory, tmp_path, monkeypatch):
+    (tmp_path / "index.html").write_text(
+        "<!doctype html><title>RETRANS</title>", encoding="utf-8"
+    )
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    (assets / "app.js").write_text("window.RETRANS=1", encoding="utf-8")
+    monkeypatch.setenv("RETRANS_DIST", str(tmp_path))
+    port = api_factory(LiveController())
+
+    status, body, headers = _raw_req(port, "GET", "/")
+    assert status == 200
+    assert b"RETRANS" in body
+    assert "text/html" in headers.get("content-type", "")
+
+    status, body, headers = _raw_req(port, "GET", "/assets/app.js")
+    assert status == 200
+    assert b"window.RETRANS=1" in body
+
+    # API stays JSON on the same origin.
+    api_status, data, _ = _req(port, "GET", "/api/live/status")
+    assert api_status == 200
+    assert data["ok"] is True
+    assert data["state"] == "idle"
+
+    clip_status, clip_data, _ = _req(port, "GET", "/api/clip")
+    assert clip_status == 404
+    assert clip_data["ok"] is False
+
+
+def test_dist_path_traversal_rejected(api_factory, tmp_path, monkeypatch):
+    (tmp_path / "index.html").write_text("<!doctype html>", encoding="utf-8")
+    monkeypatch.setenv("RETRANS_DIST", str(tmp_path))
+    port = api_factory(LiveController())
+    status, data, raw = _req(port, "GET", "/../../etc/passwd")
+    assert status == 404
+    assert data["ok"] is False
+    assert "root:" not in raw
+
+
+def test_missing_dist_root_is_json_404(api_factory, tmp_path, monkeypatch):
+    monkeypatch.setenv("RETRANS_DIST", str(tmp_path / "nope"))
+    monkeypatch.chdir(tmp_path)
+    port = api_factory(LiveController())
+    status, data, _ = _req(port, "GET", "/")
+    assert status == 404
+    assert data["ok"] is False
+
+
+def test_resolve_dist_dir_and_safe_file(tmp_path, monkeypatch):
+    # Exclusive miss does not fall through to cwd / package-adjacent dist/.
+    monkeypatch.setenv("RETRANS_DIST", str(tmp_path / "missing"))
+    assert resolve_dist_dir() is None
+
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html></html>", encoding="utf-8")
+    (dist / "assets").mkdir()
+    (dist / "assets" / "x.js").write_text("1", encoding="utf-8")
+    monkeypatch.setenv("RETRANS_DIST", str(dist))
+    assert resolve_dist_dir() == dist.resolve()
+
+    monkeypatch.delenv("RETRANS_DIST", raising=False)
+    monkeypatch.chdir(tmp_path)
+    assert resolve_dist_dir() == dist.resolve()
+
+    assert safe_dist_file(dist, "/") == (dist / "index.html").resolve()
+    assert safe_dist_file(dist, "/assets/x.js") == (dist / "assets" / "x.js").resolve()
+    assert safe_dist_file(dist, "/../index.html") is None
+    assert safe_dist_file(dist, "/missing.js") is None
 
 
 class _OriginHandler:

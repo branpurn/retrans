@@ -129,9 +129,12 @@ def cmd_clip(args: argparse.Namespace) -> int:
 
 def cmd_serve(args: argparse.Namespace) -> int:
     try:
-        print("retrans serve: loopback live control API (no /api/clip)", flush=True)
         print(
-            "  PUT/GET/DELETE /api/live/credentials  "
+            "retrans serve: loopback UI + /api on http://127.0.0.1:8788 (no /api/clip)",
+            flush=True,
+        )
+        print(
+            "  GET /  PUT/GET/DELETE /api/live/credentials  "
             "POST /api/live/start  GET /api/live/status  POST /api/live/stop",
             flush=True,
         )
