@@ -3,23 +3,23 @@
  * Vite 5173 is not the operator path (`npm run dev` may proxy /api → 8788; never 0.0.0.0).
  * Never fetch an absolute :5173 or :8788 API URL.
  *
- * PUT    /api/live/credentials  { rtmp_url, rtmp_key } → 200 { ok, configured:true }
- * GET    /api/live/credentials  → 200 { ok, configured }
- * DELETE /api/live/credentials  → 200 { ok, configured }
+ * GET    /api/live/keys → 200 { keys: [{id,name}] }  never secrets
+ * PUT    /api/live/keys {name?, rtmp_key, rtmp_url?} → 200 {id,name}
+ *        omit rtmp_url → default ingest rtmps://va.pscp.tv:443/x
+ * DELETE /api/live/keys/<id> → 200
  * GET    /api/live/preview?source_url= → 200 { ok, source_url, title, is_live }
  *        probe fail → 502 { ok:false, error } (not 200 empty/false)
- * POST   /api/live/start  { source_url } when configured → 200 { ok, state:"starting" }
- *        body rtmp_url/rtmp_key still work as a one-shot override
- * POST   /api/live/stop   → 200 { ok, state:"stopped" }
- * GET    /api/live/status → 200 { ok, state, source_url, error }
+ * POST   /api/live/start  { source_url, key_id } only → 200 { ok, state:"starting" }
+ * POST   /api/live/stop   { session_id } | { key_id } → 200 { ok, state:"stopped" }
+ * GET    /api/live/status → 200 { sessions:[{session_id,key_id,name,source_url,state,error}] }
  *
- * Never log or return rtmp_url / rtmp_key. No clip routes.
+ * Never log or return rtmp_url / rtmp_key. No clip routes. Sign-in uses named keys only.
  */
 
 const START = "/api/live/start";
 const STOP = "/api/live/stop";
 const STATUS = "/api/live/status";
-const CREDENTIALS = "/api/live/credentials";
+const KEYS = "/api/live/keys";
 const PREVIEW = "/api/live/preview";
 
 /** Redact rtmp_url / rtmp_key substrings only; leave NotLiveError text otherwise unchanged. */
@@ -42,21 +42,43 @@ async function readBody(res) {
   }
 }
 
+function publicSession(raw = {}) {
+  return {
+    session_id: typeof raw.session_id === "string" ? raw.session_id : "",
+    key_id: typeof raw.key_id === "string" ? raw.key_id : "",
+    name: typeof raw.name === "string" ? raw.name : "",
+    source_url: typeof raw.source_url === "string" ? raw.source_url : "",
+    state: typeof raw.state === "string" ? raw.state : "",
+    error: typeof raw.error === "string" ? raw.error : "",
+  };
+}
+
 function publicStatus(data = {}, httpStatus) {
   const state = typeof data.state === "string" ? data.state : "error";
+  const sessions = Array.isArray(data.sessions) ? data.sessions.map(publicSession) : [];
   return {
     ok: Boolean(data.ok),
     state,
     source_url: typeof data.source_url === "string" ? data.source_url : "",
     error: typeof data.error === "string" ? data.error : "",
+    sessions,
     httpStatus,
   };
 }
 
-function publicCredentials(data = {}, httpStatus, error = "") {
+function publicKey(data = {}, httpStatus, error = "") {
+  const keys = Array.isArray(data.keys)
+    ? data.keys.map((key) => ({
+        id: typeof key.id === "string" ? key.id : "",
+        name: typeof key.name === "string" ? key.name : "",
+        in_use: key.in_use === true,
+      }))
+    : [];
   return {
     ok: Boolean(data.ok),
-    configured: Boolean(data.configured),
+    id: typeof data.id === "string" ? data.id : "",
+    name: typeof data.name === "string" ? data.name : "",
+    keys,
     error: typeof error === "string" ? error : "",
     httpStatus,
   };
@@ -64,12 +86,8 @@ function publicCredentials(data = {}, httpStatus, error = "") {
 
 // status.source_url / error may be null from retrans serve; never leak dest fields.
 
-export async function start({ source_url, rtmp_url, rtmp_key }) {
-  const body = { source_url };
-  if (rtmp_url && rtmp_key) {
-    body.rtmp_url = rtmp_url;
-    body.rtmp_key = rtmp_key;
-  }
+export async function start({ source_url, key_id }) {
+  const body = { source_url, key_id };
   const res = await fetch(START, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -78,19 +96,24 @@ export async function start({ source_url, rtmp_url, rtmp_key }) {
   });
   const data = await readBody(res);
   const result = publicStatus(data, res.status);
-  if (result.error) {
-    result.error = redactSecrets(result.error, [rtmp_url, rtmp_key]);
-  }
+  if (typeof data.key_id === "string") result.key_id = data.key_id;
+  if (typeof data.session_id === "string") result.session_id = data.session_id;
+  if (result.error) result.error = redactSecrets(result.error);
   if (!res.ok && !result.error) {
     result.error = res.status === 409 ? "live session already running" : "start failed";
   }
   return result;
 }
 
-export async function stop() {
+export async function stop({ session_id, key_id } = {}) {
+  const body = {};
+  if (session_id) body.session_id = session_id;
+  else if (key_id) body.key_id = key_id;
   const res = await fetch(STOP, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     cache: "no-store",
+    body: JSON.stringify(body),
   });
   const data = await readBody(res);
   const result = publicStatus(data, res.status);
@@ -124,33 +147,36 @@ export async function preview(source_url) {
   };
 }
 
-export async function credentials() {
-  const res = await fetch(CREDENTIALS, { cache: "no-store" });
+export async function listKeys() {
+  const res = await fetch(KEYS, { cache: "no-store" });
   const data = await readBody(res);
-  return publicCredentials(data, res.status);
+  return publicKey(data, res.status);
 }
 
-export async function saveCredentials({ rtmp_url, rtmp_key }) {
-  const res = await fetch(CREDENTIALS, {
+export async function saveKey({ name, rtmp_key, rtmp_url }) {
+  const payload = { rtmp_key };
+  if (name) payload.name = name;
+  if (rtmp_url) payload.rtmp_url = rtmp_url;
+  const res = await fetch(KEYS, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     cache: "no-store",
-    body: JSON.stringify({ rtmp_url, rtmp_key }),
+    body: JSON.stringify(payload),
   });
   const data = await readBody(res);
   let error = typeof data.error === "string" ? data.error : "";
-  if (error) error = redactSecrets(error, [rtmp_url, rtmp_key]);
+  if (error) error = redactSecrets(error, [rtmp_key, rtmp_url]);
   if (!res.ok && !error) error = "sign-in failed";
-  return publicCredentials(data, res.status, error);
+  return publicKey(data, res.status, error);
 }
 
-export async function clearCredentials() {
-  const res = await fetch(CREDENTIALS, {
+export async function deleteKey(id) {
+  const res = await fetch(`${KEYS}/${encodeURIComponent(id)}`, {
     method: "DELETE",
     cache: "no-store",
   });
   const data = await readBody(res);
-  return publicCredentials(data, res.status);
+  return publicKey(data, res.status);
 }
 
 export const retransApi = {
@@ -158,7 +184,7 @@ export const retransApi = {
   stop,
   status,
   preview,
-  credentials,
-  saveCredentials,
-  clearCredentials,
+  listKeys,
+  saveKey,
+  deleteKey,
 };

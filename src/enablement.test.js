@@ -23,24 +23,33 @@ const ready = {
   configured: true,
   ack: true,
   state: "idle",
+  selectedKeyId: "key-a",
 };
 
 describe("enablement", () => {
-  it("Continue needs preview, configured, and ack", () => {
+  it("Continue needs preview, unused named key, and ack", () => {
     assert.equal(canContinue(ready), true);
     assert.equal(canContinue({ ...ready, previewOk: false }), false);
-    assert.equal(canContinue({ ...ready, configured: false }), false);
+    assert.equal(canContinue({ ...ready, selectedKeyId: "" }), false);
     assert.equal(canContinue({ ...ready, ack: false }), false);
+    assert.equal(canContinue({ previewOk: true, configured: true, ack: true }), true);
   });
 
-  it("Start needs preview, configured, ack, and not LIVE/starting", () => {
+  it("Start needs preview, unused key, ack, and that key not busy", () => {
     assert.equal(canStart(ready), true);
     assert.equal(canStart({ ...ready, previewOk: false }), false);
-    assert.equal(canStart({ ...ready, configured: false }), false);
+    assert.equal(canStart({ ...ready, selectedKeyId: "" }), false);
     assert.equal(canStart({ ...ready, ack: false }), false);
-    assert.equal(canStart({ ...ready, state: "live" }), false);
-    assert.equal(canStart({ ...ready, state: "starting" }), false);
+    assert.equal(canStart({ ...ready, selectedBusy: true }), false);
     assert.equal(canStart({ ...ready, state: "error" }), true);
+    assert.equal(
+      canStart({ previewOk: true, configured: true, ack: true, state: "live" }),
+      false,
+    );
+    assert.equal(
+      canStart({ previewOk: true, configured: true, ack: true, state: "starting" }),
+      false,
+    );
   });
 
   it("Stop when LIVE or Error", () => {

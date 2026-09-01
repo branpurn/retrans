@@ -14,12 +14,34 @@
 
       <main class="body">
         <section id="beat-1" class="beat" data-beat="1" aria-labelledby="signin-title">
-          <h2 id="signin-title" class="title">Sign in</h2>
+          <h2 id="signin-title" class="title">
+            <span>Sign in</span>
+            <button
+              type="button"
+              id="signin-help-btn"
+              class="help-q"
+              aria-expanded="false"
+              aria-controls="signin-help"
+              aria-label="Sign in help"
+            >
+              ?
+            </button>
+          </h2>
           <p id="signin-helper" class="helper">Save Media Studio RTMP once. Not X OAuth.</p>
-          <label class="field-label" for="rtmp_url">RTMP URL</label>
+          <div id="signin-help" class="help-panel hidden">
+            <ol class="help-steps">
+              <li>Open studio.x.com (Creator / Media Studio Producer)</li>
+              <li>Sources → Create Source (RTMP)</li>
+              <li>Copy the stream key into the Sign in field (not a two-field URL + key form)</li>
+            </ol>
+            <p class="helper">
+              Broadcasts → Create Broadcast + Go Live still happen on X after Retrans starts.
+            </p>
+          </div>
+          <label class="field-label" for="key_name">Name</label>
           <input
-            id="rtmp_url"
-            name="rtmp_url"
+            id="key_name"
+            name="key_name"
             type="text"
             spellcheck="false"
             autocomplete="off"
@@ -32,7 +54,22 @@
             spellcheck="false"
             autocomplete="off"
           />
-          <button id="save-btn" class="btn-primary" type="button">Save</button>
+          <details id="advanced-rtmp">
+            <summary>Advanced</summary>
+            <label class="field-label" for="rtmp_url">RTMP URL</label>
+            <input
+              id="rtmp_url"
+              name="rtmp_url"
+              type="text"
+              spellcheck="false"
+              autocomplete="off"
+            />
+          </details>
+          <ul id="key-list" class="key-list"></ul>
+          <div class="row">
+            <button id="add-key-btn" type="button">Add</button>
+            <button id="save-btn" class="btn-primary" type="button">Save</button>
+          </div>
         </section>
 
         <section id="beat-2" class="beat hidden" data-beat="2" aria-labelledby="drop-title">
@@ -60,12 +97,15 @@
               </div>
             </div>
           </div>
+          <label class="field-label" for="key_id">Destination</label>
+          <select id="key_id" name="key_id"></select>
           <label class="ack">
             <input id="ack" name="ack" type="checkbox" />
             <span>I have permission or fair use to retransmit this live.</span>
           </label>
           <button id="continue-btn" class="btn-primary" type="button" disabled>Continue</button>
           <a id="change-dest" class="change-dest" href="#">Change destination</a>
+          <a id="add-key-link" class="change-dest" href="#">Add key</a>
         </section>
 
         <section id="beat-3" class="beat hidden" data-beat="3" aria-label="Retrans">
@@ -81,12 +121,14 @@
               </div>
             </div>
           </div>
+          <ul id="session-list" class="session-list"></ul>
           <div class="row">
             <button id="start-btn" class="btn-start" type="button" disabled>
               Start live retrans
             </button>
             <button id="stop-btn" class="btn-stop" type="button" disabled>Stop</button>
           </div>
+          <a id="drop-another" class="change-dest" href="#">Drop another</a>
           <p id="transport-helper" class="helper">Idle until ready</p>
         </section>
       </main>
