@@ -15,7 +15,8 @@ directory (same origin as /api). Responses never echo rtmp_url or
 rtmp_key. There is no /api/clip route.
 
 Named keys: GET/PUT /api/live/keys, DELETE /api/live/keys/<id> (0600 local file).
-Retrans: POST /api/live/start {source_url, key_id} — concurrent workers; 409 per key_id.
+Retrans: POST /api/live/start {source_url, key_id} — live-only; concurrent workers; 409 per key_id.
+Playlist: POST /api/live/start {source_urls, key_id} — VOD+live, roll on ffmpeg EOF to the same key.
 Stop: POST /api/live/stop {session_id} or {key_id}. Status: GET /api/live/status {sessions:[]}.
 Legacy GET/PUT/DELETE /api/live/credentials and body RTMP override remain.
 """
@@ -214,6 +215,8 @@ class LiveController:
         self._lock = threading.Lock()
         self._state = "idle"
         self._source_url: str | None = None
+        self._source_urls: list[str] | None = None
+        self._source_index = 0
         self._error: str | None = None
         self._job: XLiveRestream | None = None
         self._thread: threading.Thread | None = None
@@ -230,18 +233,22 @@ class LiveController:
     def public_status(self) -> dict[str, Any]:
         with self._lock:
             self._reconcile_dead_process_locked()
-            return {
+            payload: dict[str, Any] = {
                 "ok": True,
                 "state": self._state,
                 "source_url": self._source_url,
                 "error": self._error,
             }
+            if self._source_urls is not None:
+                payload["source_index"] = self._source_index
+            return payload
 
     def _reconcile_dead_process_locked(self) -> None:
         """If status claims live/starting but ffmpeg already exited, flip to error.
 
         Covers a late wait() thread: GET /api/live/status must not stay live.
         Operator stop() sets state=stopped first, so it is not treated as error.
+        Playlist ffmpeg exit 0 is EOF: the wait() thread rolls or stops.
         """
         if self._state not in {"starting", "live"}:
             return
@@ -251,7 +258,11 @@ class LiveController:
         poll = getattr(job, "poll", None)
         if not callable(poll):
             return
-        if poll() is None:
+        code = poll()
+        if code is None:
+            return
+        if self._source_urls is not None and code == 0:
+            # EOF of the current playlist item — do not treat as mid-restream death.
             return
         self._state = "error"
         error_fn = getattr(job, "ffmpeg_exit_error", None)
@@ -269,6 +280,8 @@ class LiveController:
             generation = self._generation
             self._state = "starting"
             self._source_url = source_url
+            self._source_urls = None
+            self._source_index = 0
             self._error = None
             job = self._factory()
             self._job = job
@@ -276,6 +289,34 @@ class LiveController:
                 target=self._run,
                 args=(job, generation, source_url, rtmp_url, rtmp_key),
                 name="retrans-live",
+                daemon=True,
+            )
+            self._thread = thread
+            thread.start()
+            return "starting"
+
+    def start_playlist(self, source_urls: list[str], rtmp_url: str, rtmp_key: str) -> str:
+        """Ordered VOD+live restream. Same encode + RTMP dest; roll on ffmpeg EOF."""
+        urls = [url for url in source_urls if url]
+        if not urls:
+            raise ValueError("source_urls required")
+        with self._lock:
+            self._reconcile_dead_process_locked()
+            if self.busy:
+                raise AlreadyRunning("already running")
+            self._generation += 1
+            generation = self._generation
+            self._state = "starting"
+            self._source_urls = list(urls)
+            self._source_index = 0
+            self._source_url = urls[0]
+            self._error = None
+            job = self._factory()
+            self._job = job
+            thread = threading.Thread(
+                target=self._run_playlist,
+                args=(job, generation, list(urls), rtmp_url, rtmp_key),
+                name="retrans-playlist",
                 daemon=True,
             )
             self._thread = thread
@@ -339,6 +380,88 @@ class LiveController:
                 self._state = "error"
                 self._error = redact(str(exc), rtmp_url, rtmp_key, dest)
 
+    def _invoke_start(
+        self,
+        job: XLiveRestream,
+        source_url: str,
+        rtmp_url: str,
+        rtmp_key: str,
+        require_live: bool,
+    ) -> None:
+        """Call job.start. Playlist passes require_live=False; test doubles may omit it."""
+        if require_live:
+            job.start(source_url, rtmp_url, rtmp_key)
+            return
+        try:
+            job.start(source_url, rtmp_url, rtmp_key, require_live=False)
+        except TypeError:
+            job.start(source_url, rtmp_url, rtmp_key)
+
+    def _apply_exit_error_locked(self, job: XLiveRestream) -> None:
+        if self._state != "error" or not self._error:
+            self._state = "error"
+            error_fn = getattr(job, "ffmpeg_exit_error", None)
+            if callable(error_fn):
+                self._error = error_fn() or "ffmpeg restream exited"
+            else:
+                self._error = "ffmpeg restream exited"
+
+    def _run_playlist(
+        self,
+        job: XLiveRestream,
+        generation: int,
+        source_urls: list[str],
+        rtmp_url: str,
+        rtmp_key: str,
+    ) -> None:
+        dest = ""
+        current = job
+        try:
+            dest = join_rtmp_destination(rtmp_url, rtmp_key)
+            for index, source_url in enumerate(source_urls):
+                if index > 0:
+                    with self._lock:
+                        if self._generation != generation or self._state == "stopped":
+                            return
+                        current = self._factory()
+                        self._job = current
+                        self._source_index = index
+                        self._source_url = source_url
+                        self._state = "starting"
+                self._invoke_start(current, source_url, rtmp_url, rtmp_key, require_live=False)
+                stop_self = False
+                with self._lock:
+                    if self._generation != generation:
+                        stop_self = True
+                    elif self._state == "stopped":
+                        stop_self = True
+                    else:
+                        self._state = "live"
+                if stop_self:
+                    current.stop()
+                    return
+                code = current.wait()
+                with self._lock:
+                    if self._generation != generation:
+                        return
+                    if self._state == "stopped":
+                        return
+                    if int(code or 0) != 0:
+                        self._apply_exit_error_locked(current)
+                        return
+                    if index + 1 >= len(source_urls):
+                        self._state = "stopped"
+                        self._error = None
+                        return
+        except Exception as exc:  # noqa: BLE001
+            with self._lock:
+                if self._generation != generation:
+                    return
+                if self._state == "stopped":
+                    return
+                self._state = "error"
+                self._error = redact(str(exc), rtmp_url, rtmp_key, dest)
+
 
 class SessionHub:
     """Concurrent live sessions keyed by named key_id. 409 only when that key is busy."""
@@ -351,7 +474,7 @@ class SessionHub:
 
     def _entry_public(self, entry: dict[str, Any]) -> dict[str, Any]:
         status = entry["controller"].public_status()
-        return {
+        payload = {
             "session_id": entry["session_id"],
             "key_id": entry["key_id"],
             "name": entry["name"],
@@ -359,19 +482,33 @@ class SessionHub:
             "state": status.get("state"),
             "error": status.get("error"),
         }
+        if "source_index" in status:
+            payload["source_index"] = status["source_index"]
+        return payload
 
     def sessions_public(self) -> list[dict[str, Any]]:
         with self._lock:
             return [self._entry_public(entry) for entry in self._by_key.values()]
 
-    def start(self, source_url: str, key_id: str, name: str, rtmp_url: str, rtmp_key: str) -> dict[str, Any]:
+    def start(
+        self,
+        source_url: str,
+        key_id: str,
+        name: str,
+        rtmp_url: str,
+        rtmp_key: str,
+        source_urls: list[str] | None = None,
+    ) -> dict[str, Any]:
         with self._lock:
             entry = self._by_key.get(key_id)
             if entry is not None:
                 if entry["controller"].busy:
                     raise AlreadyRunning("already running")
                 entry["name"] = name
-                state = entry["controller"].start(source_url, rtmp_url, rtmp_key)
+                if source_urls:
+                    state = entry["controller"].start_playlist(source_urls, rtmp_url, rtmp_key)
+                else:
+                    state = entry["controller"].start(source_url, rtmp_url, rtmp_key)
                 return {
                     "session_id": entry["session_id"],
                     "key_id": key_id,
@@ -387,7 +524,10 @@ class SessionHub:
             }
             self._by_key[key_id] = entry
             self._by_session[session_id] = entry
-            state = controller.start(source_url, rtmp_url, rtmp_key)
+            if source_urls:
+                state = controller.start_playlist(source_urls, rtmp_url, rtmp_key)
+            else:
+                state = controller.start(source_url, rtmp_url, rtmp_key)
             return {"session_id": session_id, "key_id": key_id, "state": state}
 
     def stop(self, session_id: str | None = None, key_id: str | None = None) -> str:
@@ -451,6 +591,24 @@ def validate_source_url(payload: Any) -> str | None:
     if not isinstance(payload, dict):
         return None
     return parse_http_source_url(_nonempty_str(payload, "source_url"))
+
+
+def parse_source_urls(payload: Any) -> list[str] | str:
+    """Return ordered http(s) URLs or an error string. Empty list is invalid."""
+    if not isinstance(payload, dict):
+        return "invalid fields"
+    if "source_urls" not in payload:
+        return "missing fields: source_urls"
+    raw = payload.get("source_urls")
+    if not isinstance(raw, list) or not raw:
+        return "invalid fields: source_urls"
+    urls: list[str] = []
+    for item in raw:
+        parsed = parse_http_source_url(item if isinstance(item, str) else None)
+        if parsed is None:
+            return "invalid fields: source_urls"
+        urls.append(parsed)
+    return urls
 
 
 def preview_query_source_url(path_with_query: str) -> str | None:
@@ -704,6 +862,9 @@ def make_handler(
             if err:
                 self._send(400, {"ok": False, "error": err})
                 return
+            if isinstance(payload, dict) and "source_urls" in payload:
+                self._start_playlist(payload)
+                return
             if isinstance(payload, dict) and _nonempty_str(payload, "key_id"):
                 self._start_named(payload)
                 return
@@ -732,6 +893,48 @@ def make_handler(
                 )
                 return
             self._send(200, {"ok": True, "state": state})
+
+        def _start_playlist(self, payload: dict[str, Any]) -> None:
+            key_id = _nonempty_str(payload, "key_id")
+            if key_id is None:
+                self._send(400, {"ok": False, "error": "missing fields: key_id"})
+                return
+            parsed = parse_source_urls(payload)
+            if isinstance(parsed, str):
+                self._send(400, {"ok": False, "error": parsed})
+                return
+            record = get_key(key_id)
+            if record is None:
+                self._send(400, {"ok": False, "error": "unknown key_id"})
+                return
+            try:
+                started = hub.start(
+                    parsed[0],
+                    record["id"],
+                    record["name"],
+                    record["rtmp_url"],
+                    record["rtmp_key"],
+                    source_urls=parsed,
+                )
+            except AlreadyRunning:
+                self._send(
+                    409,
+                    {
+                        "ok": False,
+                        "error": "already running",
+                        "key_id": record["id"],
+                    },
+                )
+                return
+            self._send(
+                200,
+                {
+                    "ok": True,
+                    "state": started["state"],
+                    "session_id": started["session_id"],
+                    "key_id": started["key_id"],
+                },
+            )
 
         def _start_named(self, payload: dict[str, Any]) -> None:
             key_id = _nonempty_str(payload, "key_id")

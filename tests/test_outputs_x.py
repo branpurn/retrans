@@ -93,6 +93,34 @@ def test_restream_start_refuses_vod_before_ffmpeg():
     assert job.running() is False
 
 
+def test_restream_start_allows_vod_when_require_live_false():
+    spawned = {}
+
+    class Resolver:
+        def require_live(self, page_url: str) -> None:
+            raise AssertionError("playlist path must not require_live")
+
+        def resolve(self, page_url: str) -> str:
+            return "https://cdn.example/vod.m3u8"
+
+    def popen(cmd, **_kwargs):
+        spawned["cmd"] = cmd
+        return _FakeProc(code=None)
+
+    job = XLiveRestream(resolver=Resolver(), popen=popen)
+    job.start(
+        "https://www.youtube.com/watch?v=vod",
+        "rtmps://va.pscp.tv:443/x",
+        "secret-key",
+        require_live=False,
+    )
+    assert job.running()
+    assert spawned["cmd"][0] == "ffmpeg"
+    assert spawned["cmd"][-1].endswith("/secret-key")
+    assert "https://cdn.example/vod.m3u8" in spawned["cmd"]
+    assert spawned["cmd"][spawned["cmd"].index("-b:v") + 1] == "9M"
+
+
 def test_restream_start_spawns_ffmpeg_after_resolve():
     spawned = {}
 
