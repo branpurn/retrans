@@ -53,3 +53,13 @@ export function pillLabel(status) {
       return "Idle";
   }
 }
+
+/**
+ * Transport helper copy. On Error, show the API error string as-is
+ * (caller redacts rtmp secrets only — never rewrite NotLiveError text).
+ */
+export function transportHelper({ backend, error }) {
+  if (backend === "live") return "Retransmitting live to X";
+  if (backend === "error" && nonEmptyError(error)) return error;
+  return "Idle until preview + destination + ack";
+}

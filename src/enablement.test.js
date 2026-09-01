@@ -8,7 +8,9 @@ import {
   isUsableStatus,
   pillFor,
   pillLabel,
+  transportHelper,
 } from "./enablement.js";
+import { redactSecrets } from "./retransApi.js";
 
 function chromePill(result, previewOk = false) {
   return pillLabel(pillFor({ previewOk, state: backendFromResult(result) }));
@@ -93,12 +95,51 @@ describe("enablement", () => {
     // Chrome stays Idle; transport helper stays the idle copy (applyStatus no-ops).
     assert.equal(pillLabel(pillFor({ previewOk: false, state: "idle" })), "Idle");
     assert.equal(pillLabel(pillFor({ previewOk: true, state: "idle" })), "Preview");
+    assert.equal(
+      transportHelper({ backend: "idle", error: "" }),
+      "Idle until preview + destination + ack",
+    );
 
     const main = readFileSync(new URL("./main.js", import.meta.url), "utf8");
     const api = readFileSync(new URL("./retransApi.js", import.meta.url), "utf8");
     assert.match(main, /isUsableStatus/);
     assert.match(main, /applyStatus/);
+    assert.match(main, /transportHelper/);
     assert.doesNotMatch(main, /error\s*=\s*["']status failed["']/);
     assert.doesNotMatch(api, /["']status failed["']/);
+    assert.doesNotMatch(main, /\/api\/clip/);
+    assert.doesNotMatch(api, /\/api\/clip/);
+  });
+
+  it("start 400 NotLiveError shows unchanged in Error transport helper", () => {
+    const messages = [
+      "source is not a live stream (not_live); VOD and clips are rejected",
+      "source is not a live stream (was_live); VOD and clips are rejected",
+      "source is not a live stream (is_upcoming); VOD and clips are rejected",
+      "could not confirm live stream (VOD / not live): yt-dlp exit 1",
+    ];
+    for (const error of messages) {
+      const result = { ok: false, error, httpStatus: 400 };
+      assert.equal(backendFromResult(result), "error");
+      assert.equal(chromePill(result, true), "Error");
+      const shown = transportHelper({
+        backend: "error",
+        error: redactSecrets(error, ["rtmps://a.media.example/live", "streamkey"]),
+      });
+      assert.equal(shown, error);
+    }
+  });
+
+  it("Error helper redacts rtmp secrets only", () => {
+    const error =
+      "source is not a live stream (not_live); VOD and clips are rejected near rtmps://a.media.example/live key streamkey";
+    const shown = transportHelper({
+      backend: "error",
+      error: redactSecrets(error, ["rtmps://a.media.example/live", "streamkey"]),
+    });
+    assert.match(shown, /source is not a live stream \(not_live\); VOD and clips are rejected/);
+    assert.doesNotMatch(shown, /rtmps?:\/\//);
+    assert.doesNotMatch(shown, /streamkey/);
+    assert.match(shown, /\[redacted/);
   });
 });
