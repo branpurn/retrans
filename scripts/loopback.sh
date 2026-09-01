@@ -43,6 +43,30 @@ trap cleanup EXIT INT TERM HUP
 
 retrans serve &
 serve_pid=$!
+
+# Fail-hard unless serve is on 127.0.0.1:8788. Do not start the UI first.
+serve_up=0
+for ((i = 0; i < 16; i++)); do
+  if ! kill -0 "${serve_pid}" 2>/dev/null; then
+    echo "retrans serve exited before listening on 127.0.0.1:8788" >&2
+    exit 1
+  fi
+  if command -v curl >/dev/null 2>&1 \
+      && curl -sf --max-time 1 "http://127.0.0.1:8788/api/live/status" >/dev/null 2>&1; then
+    serve_up=1
+    break
+  fi
+  if (echo >/dev/tcp/127.0.0.1/8788) >/dev/null 2>&1; then
+    serve_up=1
+    break
+  fi
+  sleep 0.5
+done
+if [[ "${serve_up}" -ne 1 ]]; then
+  echo "fail-hard: retrans serve is not listening on 127.0.0.1:8788; UI not started" >&2
+  exit 1
+fi
+
 npm run dev &
 ui_pid=$!
 

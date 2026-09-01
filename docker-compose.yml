@@ -29,6 +29,16 @@ services:
       - path: .env
         required: false
     init: true
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf --max-time 2 http://127.0.0.1:8788/api/live/status || bash -c 'echo >/dev/tcp/127.0.0.1/8788'",
+        ]
+      interval: 2s
+      timeout: 2s
+      retries: 5
+      start_period: 3s
 
   ui:
     profiles: ["loopback"]
@@ -41,5 +51,6 @@ services:
     environment:
       HOST: "127.0.0.1"
     depends_on:
-      - serve
+      serve:
+        condition: service_healthy
     init: true
