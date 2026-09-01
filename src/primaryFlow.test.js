@@ -67,6 +67,21 @@ describe("primary-flow chrome lock", () => {
     assert.doesNotMatch(main, /\/api\/live\/credentials/);
   });
 
+  it("Continue/Start are not gated on previewByUrl success", () => {
+    const readyStart = main.indexOf("function playlistReady(");
+    const readyEnd = main.indexOf("\nfunction ", readyStart + 1);
+    const readyFn = main.slice(readyStart, readyEnd);
+    const gateStart = main.indexOf("function gate(");
+    const gateEnd = main.indexOf("\nfunction ", gateStart + 1);
+    const gateFn = main.slice(gateStart, gateEnd);
+    assert.match(readyFn, /playlistUrls\(/);
+    assert.doesNotMatch(readyFn, /previewByUrl/);
+    assert.match(gateFn, /previewOk:\s*playlistReady\(\)/);
+    assert.doesNotMatch(gateFn, /state\.previewOk/);
+    assert.match(main, /els\.continueBtn\.disabled = !canContinue\(gate\(\)\)/);
+    assert.match(main, /els\.startBtn\.disabled = !canStart\(gate\(\)\) \|\| urls\.length === 0/);
+  });
+
   it("locks Beat 2 Drop link, unused-key picker, ack, Continue", () => {
     assert.match(html, />Drop link</);
     assert.match(html, /id="source_url"[^>]*type="text"/s);

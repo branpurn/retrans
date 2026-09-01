@@ -27,7 +27,7 @@ const ready = {
 };
 
 describe("enablement", () => {
-  it("Continue needs preview, unused named key, and ack", () => {
+  it("Continue needs a source (playlistReady remap), unused named key, and ack", () => {
     assert.equal(canContinue(ready), true);
     assert.equal(canContinue({ ...ready, previewOk: false }), false);
     assert.equal(canContinue({ ...ready, selectedKeyId: "" }), false);
@@ -35,7 +35,7 @@ describe("enablement", () => {
     assert.equal(canContinue({ previewOk: true, configured: true, ack: true }), true);
   });
 
-  it("Start needs preview, unused key, ack, and that key not busy", () => {
+  it("Start needs a source (playlistReady remap), unused key, ack, and that key not busy", () => {
     assert.equal(canStart(ready), true);
     assert.equal(canStart({ ...ready, previewOk: false }), false);
     assert.equal(canStart({ ...ready, selectedKeyId: "" }), false);

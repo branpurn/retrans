@@ -37,7 +37,13 @@ import {
   stickSessions,
   unusedKeys,
 } from "./keysFlow.js";
-import { NAMED_TEE, OUTBOUND_LABEL, attachPlayer, playerShouldAttach } from "./player.js";
+import {
+  NAMED_TEE,
+  OUTBOUND_LABEL,
+  attachPlayer,
+  playerShouldAttach,
+  sessionOutboundSrc,
+} from "./player.js";
 import { paintPaneMenu, paneAfterMenu, paneFromClick } from "./paneMenu.js";
 
 const els = {
@@ -98,6 +104,30 @@ const state = {
 };
 
 let pollTimer = null;
+const outboundVideos = new Map();
+
+function takeOutboundVideo(sess) {
+  const id = sess.session_id || sess.key_id || "";
+  let video = outboundVideos.get(id);
+  if (!video) {
+    video = document.createElement("video");
+    video.className = "outbound-player";
+    video.controls = true;
+    video.playsInline = true;
+    video.preload = "none";
+    video.setAttribute("aria-label", OUTBOUND_LABEL);
+    if (id) outboundVideos.set(id, video);
+  }
+  return video;
+}
+
+function pruneOutboundVideos(keep) {
+  for (const [id, video] of outboundVideos) {
+    if (keep.has(id)) continue;
+    attachPlayer(video, { attach: false });
+    outboundVideos.delete(id);
+  }
+}
 
 function secrets() {
   return [readField(els.rtmpUrl), readField(els.rtmpKey)];
@@ -181,10 +211,9 @@ function selectedBusy() {
     && Boolean(state.selectedKeyId);
 }
 
+/** Dropped / typed YouTube URLs only. Preview metadata is not a Start gate. */
 function playlistReady() {
-  const urls = playlistUrls(state.playlist, readField(els.source).trim());
-  if (urls.length === 0) return false;
-  return urls.every((href) => state.previewByUrl[href] === true);
+  return playlistUrls(state.playlist, readField(els.source).trim()).length > 0;
 }
 
 function gate() {
@@ -193,7 +222,7 @@ function gate() {
   const selectedKeyId = kept ? state.selectedKeyId : "";
   const busy = Boolean(selectedKeyId) && unused.every((key) => key.id !== selectedKeyId);
   return {
-    previewOk: playlistReady() || (state.previewOk && state.playlist.length === 0),
+    previewOk: playlistReady(),
     configured: state.keys.length > 0 || state.justSaved,
     ack: els.ack.checked,
     state: state.backend,
@@ -318,6 +347,7 @@ function renderNowPlaying() {
 
 function renderSessions() {
   els.sessionList.replaceChildren();
+  const keep = new Set();
   for (const sess of state.sessions) {
     const li = document.createElement("li");
     const source = document.createElement("span");
@@ -340,23 +370,21 @@ function renderSessions() {
     stop.addEventListener("click", () => onStopSession(sess));
     li.append(source, name, pill, stop);
     if (playerShouldAttach({ backend: sess.state })) {
+      const id = sess.session_id || sess.key_id || "";
+      if (id) keep.add(id);
       const wrap = document.createElement("div");
       wrap.className = "outbound";
       const label = document.createElement("p");
       label.className = "outbound-label";
       label.textContent = OUTBOUND_LABEL;
-      const video = document.createElement("video");
-      video.className = "outbound-player";
-      video.controls = true;
-      video.playsInline = true;
-      video.preload = "none";
-      video.setAttribute("aria-label", OUTBOUND_LABEL);
-      attachPlayer(video, { attach: true, src: sess.outbound_url || NAMED_TEE });
+      const video = takeOutboundVideo(sess);
+      attachPlayer(video, { attach: true, src: sessionOutboundSrc(sess) || NAMED_TEE });
       wrap.append(label, video);
       li.append(wrap);
     }
     els.sessionList.append(li);
   }
+  pruneOutboundVideos(keep);
 }
 
 function render() {
@@ -385,7 +413,7 @@ function render() {
   els.outbound?.classList.toggle("hidden", !attach);
   attachPlayer(els.player, {
     attach,
-    src: activeSession()?.outbound_url || NAMED_TEE,
+    src: sessionOutboundSrc(activeSession()) || NAMED_TEE,
   });
 
   els.helper.textContent = transportHelper({
