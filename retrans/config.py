@@ -1,4 +1,8 @@
-"""Env-var names and secret handling. Never log or persist RTMP keys / X tokens."""
+"""Env-var names and secret handling.
+
+Never log RTMP keys / X tokens. The only persist path is the operator-local
+0600 credentials file (see retrans.credentials). API responses never echo them.
+"""
 
 from __future__ import annotations
 

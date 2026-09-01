@@ -8,6 +8,8 @@ Success is live retrans via Media Studio RTMP + retrans bridge: a live YouTube (
 
 Wave 1 operator UI: paste a YouTube live URL → preview → Media Studio RTMP destination → permission / fair-use ack → start/stop **LIVE** retrans to X.
 
+Sign in = `PUT /api/live/credentials` or env `RETRANS_X_RTMP_URL` / `RETRANS_X_RTMP_KEY` (local file mode 0600; env wins on read). Drop link = `source_url`. Retrans = `POST /api/live/start` using the store. Media Studio Create Broadcast + Go Live still required. No X OAuth.
+
 Not clip-post. Not VOD. Not file upload. Status language is live only (Idle | Preview | LIVE | Stopped | Error). Never Posted / Clip / Tweet / Upload.
 
 Primary operator UI (three beats): [design/primary-flow.md](design/primary-flow.md)
@@ -97,13 +99,22 @@ retrans resolve 'https://www.youtube.com/watch?v=…'
 
 `retrans serve` **must** listen on `127.0.0.1:8788`. `HOST=0.0.0.0` (and any LAN / hotspot / wildcard bind) is refused with a non-zero exit. There is no `/api/clip` route.
 
+**Sign in** = `PUT /api/live/credentials` or env `RETRANS_X_RTMP_URL` / `RETRANS_X_RTMP_KEY`.  
+**Drop link** = `source_url`.  
+**Retrans** = `POST /api/live/start`. Media Studio **Create Broadcast** + **Go Live** are still required. There is no public X OAuth to mint Media Studio RTMP keys — do not invent one.
+
+Credentials persist to `$XDG_CONFIG_HOME/retrans/credentials.json` (else `~/.config/retrans/credentials.json`) at mode **0600**. Env wins over the file on read. `DELETE` removes the file only (does not unset process env). Responses **never** echo `rtmp_url` or `rtmp_key` (not even a masked key). They are never logged.
+
 ```bash
 retrans serve
 ```
 
 | Method | Path | Body / response |
 | --- | --- | --- |
-| `POST` | `/api/live/start` | JSON `{"source_url":"…","rtmp_url":"…","rtmp_key":"…"}` → `200 {"ok":true,"state":"starting"}` (process up → later status `live`). `400` missing/invalid fields **or not a live stream** (VOD / clip / upcoming / ended — ffmpeg/RTMP are not started). `409` already running. |
+| `PUT` | `/api/live/credentials` | JSON `{"rtmp_url":"…","rtmp_key":"…"}` → `200 {"ok":true,"configured":true}`. `400` empty/invalid (`rtmp://` or `rtmps://` only, same rules as start). Never echoes secrets. |
+| `GET` | `/api/live/credentials` | `200 {"ok":true,"configured":true\|false}`. `configured` is true when both URL and key are present from env or file. Never echoes secrets. |
+| `DELETE` | `/api/live/credentials` | Removes the file. `200 {"ok":true,"configured":true\|false}` — still `true` if env is set. |
+| `POST` | `/api/live/start` | JSON `{"source_url":"…"}` is enough when configured. `rtmp_url`/`rtmp_key` in the body still work as a one-shot override. → `200 {"ok":true,"state":"starting"}` (process up → later status `live`). `400` if not configured and body lacks RTMP fields, or invalid fields, **or not a live stream** (VOD / clip / upcoming / ended — ffmpeg/RTMP are not started). `409` already running. |
 | `POST` | `/api/live/stop` | `200 {"ok":true,"state":"stopped"}` (also `200`/`ok` if already idle) |
 | `GET` | `/api/live/status` | `200 {"ok":true,"state":"idle"\|"starting"\|"live"\|"error"\|"stopped","source_url":"…" or null,"error":null or string}` |
 
@@ -128,7 +139,9 @@ Do not bind or proxy `0.0.0.0`. Vite `server.host` is `127.0.0.1` only.
 | `rtmp_url` | `RETRANS_X_RTMP_URL` | RTMP(S) URL from studio.x.com → Sources → Create Source |
 | `rtmp_key` | `RETRANS_X_RTMP_KEY` | Stream key (password). Never logged, never shown after submit. |
 
-- **Start live retrans** only when: preview ok + `rtmp_url` + `rtmp_key` + fair-use ack + status not LIVE
+Sign in stores those dest fields once (`PUT /api/live/credentials` or env). After that, start only needs `source_url`.
+
+- **Start live retrans** only when: preview ok + dest (store/env or fields) + fair-use ack + status not LIVE
 - **Stop** only when LIVE
 - Ack copy: `I have permission or fair use to retransmit this live.` (not legal advice)
 - After Start, still Create Broadcast + Go Live in Media Studio

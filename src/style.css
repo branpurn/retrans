@@ -30,6 +30,8 @@ body {
 
 #app {
   min-height: 100vh;
+  max-width: 480px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
 }
@@ -40,7 +42,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  padding: 0 24px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
@@ -92,8 +94,6 @@ body {
 
 .body {
   width: 100%;
-  max-width: 720px;
-  margin: 0 auto;
   padding: 24px;
   display: flex;
   flex-direction: column;
@@ -101,14 +101,10 @@ body {
   flex: 1;
 }
 
-.block {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 12px;
+.beat {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--gap);
 }
 
 .title {
@@ -153,7 +149,7 @@ button {
   height: 32px;
   padding: 0 12px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: var(--line);
   color: var(--ink);
   font: inherit;
@@ -166,6 +162,7 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.btn-primary,
 .btn-start {
   background: var(--accent);
   color: #fff;
@@ -186,11 +183,7 @@ button:disabled {
 }
 
 .preview-card {
-  min-height: 88px;
-}
-
-.preview-empty {
-  color: var(--muted);
+  min-height: 0;
 }
 
 .preview-filled {
@@ -207,8 +200,14 @@ button:disabled {
   flex: 0 0 120px;
   border-radius: var(--radius);
   overflow: hidden;
-  background: var(--bg);
+  background: var(--panel);
   border: 1px solid var(--line);
+}
+
+.preview-card--compact .thumb-wrap {
+  width: 88px;
+  height: 50px;
+  flex: 0 0 88px;
 }
 
 .thumb-wrap img {
@@ -245,4 +244,15 @@ button:disabled {
 
 .ack input {
   margin-top: 2px;
+}
+
+.change-dest {
+  color: var(--muted);
+  font: inherit;
+  text-decoration: underline;
+  align-self: flex-start;
+}
+
+.change-dest:hover {
+  color: var(--ink);
 }

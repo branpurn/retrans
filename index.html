@@ -13,38 +13,9 @@
       </header>
 
       <main class="body">
-        <section class="block" aria-labelledby="paste-label">
-          <label id="paste-label" class="title" for="source_url">Source URL</label>
-          <div class="row">
-            <input
-              id="source_url"
-              name="source_url"
-              type="url"
-              spellcheck="false"
-              autocomplete="off"
-              placeholder="Paste YouTube URL (live first)"
-            />
-            <button id="preview-btn" type="button">Preview</button>
-          </div>
-          <p id="paste-helper" class="helper hidden">YouTube first</p>
-        </section>
-
-        <section class="block preview-card" aria-labelledby="preview-title">
-          <div id="preview-empty" class="preview-empty">Paste a YouTube URL to preview</div>
-          <div id="preview-filled" class="preview-filled hidden">
-            <div class="thumb-wrap">
-              <img id="preview-thumb" alt="" />
-              <span id="preview-live-badge" class="live-badge hidden">LIVE</span>
-            </div>
-            <div class="preview-meta">
-              <h2 id="preview-title" class="title"></h2>
-              <p id="preview-host" class="helper"></p>
-            </div>
-          </div>
-        </section>
-
-        <section class="block" aria-labelledby="dest-title">
-          <h2 id="dest-title" class="title">Media Studio RTMP</h2>
+        <section id="beat-1" class="beat" data-beat="1" aria-labelledby="signin-title">
+          <h2 id="signin-title" class="title">Sign in</h2>
+          <p id="signin-helper" class="helper">Save Media Studio RTMP once. Not X OAuth.</p>
           <label class="field-label" for="rtmp_url">RTMP URL</label>
           <input
             id="rtmp_url"
@@ -61,30 +32,61 @@
             spellcheck="false"
             autocomplete="new-password"
           />
-          <p class="helper">From X Media Studio</p>
-          <p class="helper">
-            After Start, still Create Broadcast + Go Live in Media Studio. RETRANS
-            sends the live restream; there is no public API to start the broadcast.
-          </p>
+          <button id="save-btn" class="btn-primary" type="button">Save</button>
         </section>
 
-        <section class="block" aria-labelledby="gate-title">
-          <h2 id="gate-title" class="title">Permission</h2>
+        <section id="beat-2" class="beat hidden" data-beat="2" aria-labelledby="drop-title">
+          <h2 id="drop-title" class="title">Drop link</h2>
+          <input
+            id="source_url"
+            name="source_url"
+            type="url"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="Paste YouTube live URL"
+          />
+          <button id="preview-btn" type="button">Preview</button>
+          <p id="paste-helper" class="helper hidden">YouTube first</p>
+          <div id="preview-card" class="preview-card hidden" data-preview>
+            <div class="preview-filled">
+              <div class="thumb-wrap">
+                <img class="preview-thumb" alt="" />
+                <span class="preview-live-badge live-badge hidden">LIVE</span>
+              </div>
+              <div class="preview-meta">
+                <h2 class="title preview-title"></h2>
+                <p class="helper preview-host"></p>
+              </div>
+            </div>
+          </div>
           <label class="ack">
             <input id="ack" name="ack" type="checkbox" />
             <span>I have permission or fair use to retransmit this live.</span>
           </label>
+          <button id="continue-btn" class="btn-primary" type="button" disabled>Continue</button>
+          <a id="change-dest" class="change-dest" href="#">Change destination</a>
         </section>
 
-        <section class="block" aria-labelledby="transport-title">
-          <h2 id="transport-title" class="title">Transport</h2>
+        <section id="beat-3" class="beat hidden" data-beat="3" aria-label="Retrans">
+          <div id="preview-card-compact" class="preview-card preview-card--compact hidden" data-preview>
+            <div class="preview-filled">
+              <div class="thumb-wrap">
+                <img class="preview-thumb" alt="" />
+                <span class="preview-live-badge live-badge hidden">LIVE</span>
+              </div>
+              <div class="preview-meta">
+                <h2 class="title preview-title"></h2>
+                <p class="helper preview-host"></p>
+              </div>
+            </div>
+          </div>
           <div class="row">
             <button id="start-btn" class="btn-start" type="button" disabled>
               Start live retrans
             </button>
             <button id="stop-btn" class="btn-stop" type="button" disabled>Stop</button>
           </div>
-          <p id="transport-helper" class="helper">Idle until preview + destination + ack</p>
+          <p id="transport-helper" class="helper">Idle until ready</p>
         </section>
       </main>
     </div>

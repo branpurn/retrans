@@ -3,6 +3,9 @@
 Bind is locked to 127.0.0.1:8788. HOST=0.0.0.0 (and any non-loopback /
 LAN / hotspot address) is refused with a non-zero exit. Responses never
 echo rtmp_url or rtmp_key. There is no /api/clip route.
+
+Sign in: PUT /api/live/credentials (or env). Drop link: source_url.
+Retrans: POST /api/live/start (fills RTMP from store when body omits it).
 """
 
 from __future__ import annotations
@@ -19,11 +22,22 @@ from typing import Any
 from urllib.parse import urlparse
 
 from retrans.config import DEFAULT_PORT, HOST_ENV, LOOPBACK_HOST, PORT_ENV, redact
+from retrans.credentials import (
+    delete_credentials,
+    is_configured,
+    load_credentials,
+    save_credentials,
+)
 from retrans.ingest import NotLiveError, ResolveError, StreamResolver
 from retrans.outputs.x import RestreamError, XLiveRestream, join_rtmp_destination
 
 MAX_BODY = 64 * 1024
 VALID_STATES = ("idle", "starting", "live", "error", "stopped")
+CORS_METHODS = "GET, PUT, POST, DELETE, OPTIONS"
+NOT_CONFIGURED = (
+    "RTMP credentials are not configured. "
+    "PUT /api/live/credentials or set RETRANS_X_RTMP_URL and RETRANS_X_RTMP_KEY."
+)
 
 
 class BindRefused(RuntimeError):
@@ -223,29 +237,82 @@ class LiveController:
                 self._error = redact(str(exc), rtmp_url, rtmp_key, dest)
 
 
-def validate_start_payload(payload: Any) -> tuple[str, str, str] | str:
-    """Return (source_url, rtmp_url, rtmp_key) or an error string."""
+def _nonempty_str(payload: dict[str, Any], key: str) -> str | None:
+    raw = payload.get(key)
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    return raw.strip()
+
+
+def validate_credentials_payload(payload: Any) -> tuple[str, str] | str:
+    """Return (rtmp_url, rtmp_key) or an error string. Same RTMP rules as start."""
     if not isinstance(payload, dict):
         return "invalid fields"
-    required = ("source_url", "rtmp_url", "rtmp_key")
-    missing = [key for key in required if key not in payload]
+    missing = [key for key in ("rtmp_url", "rtmp_key") if key not in payload]
     if missing:
         return f"missing fields: {', '.join(missing)}"
-    values: dict[str, str] = {}
-    for key in required:
-        raw = payload[key]
-        if not isinstance(raw, str) or not raw.strip():
-            return f"invalid fields: {key}"
-        values[key] = raw.strip()
-    source = values["source_url"]
-    parsed = urlparse(source)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return "invalid fields: source_url"
+    url = _nonempty_str(payload, "rtmp_url")
+    key = _nonempty_str(payload, "rtmp_key")
+    if url is None:
+        return "invalid fields: rtmp_url"
+    if key is None:
+        return "invalid fields: rtmp_key"
     try:
-        join_rtmp_destination(values["rtmp_url"], values["rtmp_key"])
+        join_rtmp_destination(url, key)
     except RestreamError:
         return "invalid fields: rtmp_url"
-    return values["source_url"], values["rtmp_url"], values["rtmp_key"]
+    return url, key
+
+
+def validate_source_url(payload: Any) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    source = _nonempty_str(payload, "source_url")
+    if source is None:
+        return None
+    parsed = urlparse(source)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    return source
+
+
+def _override_rtmp(payload: dict[str, Any]) -> tuple[str, str] | str | None:
+    """Body rtmp_url/rtmp_key is a one-shot override. None if neither field is present."""
+    has_url = "rtmp_url" in payload
+    has_key = "rtmp_key" in payload
+    if not has_url and not has_key:
+        return None
+    return validate_credentials_payload(payload)
+
+
+def validate_start_payload(
+    payload: Any,
+    stored: tuple[str, str] | None = None,
+) -> tuple[str, str, str] | str:
+    """Return (source_url, rtmp_url, rtmp_key) or an error string.
+
+    source_url is always required. rtmp_url/rtmp_key in the body are an
+    optional one-shot override. Otherwise fill from stored/env.
+    """
+    if not isinstance(payload, dict):
+        return "invalid fields"
+    if "source_url" not in payload:
+        return "missing fields: source_url"
+    source = validate_source_url(payload)
+    if source is None:
+        return "invalid fields: source_url"
+    override = _override_rtmp(payload)
+    if isinstance(override, str):
+        return override
+    if override is not None:
+        return source, override[0], override[1]
+    if stored is not None:
+        try:
+            join_rtmp_destination(stored[0], stored[1])
+        except RestreamError:
+            return "invalid fields: rtmp_url"
+        return source, stored[0], stored[1]
+    return NOT_CONFIGURED
 
 
 def _cors_origin(handler: BaseHTTPRequestHandler) -> str | None:
@@ -280,26 +347,65 @@ def make_handler(
             if origin:
                 self.send_header("Access-Control-Allow-Origin", origin)
                 self.send_header("Vary", "Origin")
-                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Methods", CORS_METHODS)
                 self.send_header("Access-Control-Allow-Headers", "Content-Type")
             self.end_headers()
             self.wfile.write(body)
+
+        def _read_json(self) -> tuple[Any, str | None]:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length > MAX_BODY:
+                return None, "invalid fields"
+            raw = self.rfile.read(length) if length else b""
+            try:
+                return json.loads(raw.decode("utf-8") or "null"), None
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                return None, "invalid fields"
 
         def do_OPTIONS(self) -> None:
             self.send_response(204)
             origin = _cors_origin(self)
             if origin:
                 self.send_header("Access-Control-Allow-Origin", origin)
-                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Methods", CORS_METHODS)
                 self.send_header("Access-Control-Allow-Headers", "Content-Type")
             self.send_header("Content-Length", "0")
             self.end_headers()
 
         def do_GET(self) -> None:
-            if self.path.split("?", 1)[0] != "/api/live/status":
+            path = self.path.split("?", 1)[0]
+            if path == "/api/live/credentials":
+                self._send(200, {"ok": True, "configured": is_configured()})
+                return
+            if path != "/api/live/status":
                 self._send(404, {"ok": False, "error": "not found"})
                 return
             self._send(200, controller.public_status())
+
+        def do_PUT(self) -> None:
+            path = self.path.split("?", 1)[0]
+            if path != "/api/live/credentials":
+                self._send(404, {"ok": False, "error": "not found"})
+                return
+            payload, err = self._read_json()
+            if err:
+                self._send(400, {"ok": False, "error": err})
+                return
+            parsed = validate_credentials_payload(payload)
+            if isinstance(parsed, str):
+                self._send(400, {"ok": False, "error": parsed})
+                return
+            rtmp_url, rtmp_key = parsed
+            save_credentials(rtmp_url, rtmp_key)
+            self._send(200, {"ok": True, "configured": True})
+
+        def do_DELETE(self) -> None:
+            path = self.path.split("?", 1)[0]
+            if path != "/api/live/credentials":
+                self._send(404, {"ok": False, "error": "not found"})
+                return
+            delete_credentials()
+            self._send(200, {"ok": True, "configured": is_configured()})
 
         def do_POST(self) -> None:
             path = self.path.split("?", 1)[0]
@@ -310,17 +416,11 @@ def make_handler(
             if path != "/api/live/start":
                 self._send(404, {"ok": False, "error": "not found"})
                 return
-            length = int(self.headers.get("Content-Length") or 0)
-            if length > MAX_BODY:
-                self._send(400, {"ok": False, "error": "invalid fields"})
+            payload, err = self._read_json()
+            if err:
+                self._send(400, {"ok": False, "error": err})
                 return
-            raw = self.rfile.read(length) if length else b""
-            try:
-                payload = json.loads(raw.decode("utf-8") or "null")
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                self._send(400, {"ok": False, "error": "invalid fields"})
-                return
-            parsed = validate_start_payload(payload)
+            parsed = validate_start_payload(payload, stored=load_credentials())
             if isinstance(parsed, str):
                 self._send(400, {"ok": False, "error": parsed})
                 return

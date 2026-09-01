@@ -130,7 +130,11 @@ def cmd_clip(args: argparse.Namespace) -> int:
 def cmd_serve(args: argparse.Namespace) -> int:
     try:
         print("retrans serve: loopback live control API (no /api/clip)", flush=True)
-        print("  POST /api/live/start  GET /api/live/status  POST /api/live/stop", flush=True)
+        print(
+            "  PUT/GET/DELETE /api/live/credentials  "
+            "POST /api/live/start  GET /api/live/status  POST /api/live/stop",
+            flush=True,
+        )
         serve_forever(host=args.host, port=args.port)
     except BindRefused as exc:
         print(str(exc), file=sys.stderr)
