@@ -15,7 +15,13 @@ describe("primary-flow chrome lock", () => {
     assert.match(html, /id="beat-1"/);
     assert.match(html, /id="beat-2"/);
     assert.match(html, /id="beat-3"/);
+    assert.match(html, /id="pane-menu"/);
+    assert.match(html, /data-pane="1"[^>]*>Keys</);
+    assert.match(html, /data-pane="2"[^>]*>Drop link</);
+    assert.match(html, /data-pane="3"[^>]*>Outbound</);
+    assert.equal((html.match(/id="pane-menu"/g) || []).length, 1);
     assert.match(css, /\.beat\b/);
+    assert.match(css, /\.pane-menu\b/);
     assert.doesNotMatch(html, /id="clear-creds-btn"/);
     assert.doesNotMatch(html, /Sign in with X/);
     assert.doesNotMatch(html, /id="broadcast/);

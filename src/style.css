@@ -92,6 +92,24 @@ body {
   color: #fff;
 }
 
+.pane-menu {
+  display: flex;
+  gap: 4px;
+  padding: 8px 24px 0;
+}
+
+.pane-menu button {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 12px;
+}
+
+.pane-menu button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #fff;
+}
+
 .body {
   width: 100%;
   padding: 24px;

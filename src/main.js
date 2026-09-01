@@ -38,8 +38,10 @@ import {
   unusedKeys,
 } from "./keysFlow.js";
 import { NAMED_TEE, OUTBOUND_LABEL, attachPlayer, playerShouldAttach } from "./player.js";
+import { paintPaneMenu, paneAfterMenu, paneFromClick } from "./paneMenu.js";
 
 const els = {
+  paneMenu: document.getElementById("pane-menu"),
   beat1: document.getElementById("beat-1"),
   beat2: document.getElementById("beat-2"),
   beat3: document.getElementById("beat-3"),
@@ -122,6 +124,7 @@ function showBeat(n) {
   els.beat1.classList.toggle("hidden", n !== 1);
   els.beat2.classList.toggle("hidden", n !== 2);
   els.beat3.classList.toggle("hidden", n !== 3);
+  paintPaneMenu(els.paneMenu, n);
 }
 
 function applyChrome(next) {
@@ -376,6 +379,7 @@ function render() {
   renderPlaylist();
   renderSessions();
   renderNowPlaying();
+  paintPaneMenu(els.paneMenu, state.beat);
   const rowLive = state.sessions.some((sess) => playerShouldAttach({ backend: sess.state }));
   const attach = !rowLive && playerShouldAttach({ backend: state.backend, sessions: state.sessions });
   els.outbound?.classList.toggle("hidden", !attach);
@@ -619,6 +623,14 @@ async function onStopSession(sess) {
   }
   render();
 }
+
+els.paneMenu.addEventListener("click", (event) => {
+  const pane = paneFromClick(event.target);
+  if (!pane) return;
+  // Menu never Stops. Drop link with no selected key stays on Keys.
+  showBeat(paneAfterMenu(pane, state.selectedKeyId, state.beat));
+  render();
+});
 
 els.previewBtn.addEventListener("click", runPreview);
 els.addUrlBtn.addEventListener("click", onAddUrl);
