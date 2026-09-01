@@ -35,6 +35,13 @@ def test_ffmpeg_cmd_is_h264_aac_flv_not_hevc():
     assert "-c:v" in cmd and cmd[cmd.index("-c:v") + 1] == "libx264"
     assert "-c:a" in cmd and cmd[cmd.index("-c:a") + 1] == "aac"
     assert "-f" in cmd and cmd[cmd.index("-f") + 1] == "flv"
+    assert "-r" in cmd and cmd[cmd.index("-r") + 1] == "30"
+    assert "-b:v" in cmd and cmd[cmd.index("-b:v") + 1] == "9M"
+    assert "-b:a" in cmd and cmd[cmd.index("-b:a") + 1] == "128k"
+    vf = cmd[cmd.index("-vf") + 1]
+    assert "1920:1080" in vf
+    assert "force_original_aspect_ratio=decrease" in vf
+    assert "pad=1920:1080" in vf
     joined = " ".join(cmd)
     assert "hevc" not in joined.lower()
     assert "libx265" not in joined
