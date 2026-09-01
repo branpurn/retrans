@@ -43,7 +43,7 @@ Without Docker (`pip install -e .` and `npm install` first):
 
 CI checks that `HOST=0.0.0.0 ./scripts/loopback.sh` is refused (non-zero; no bind). Both paths fail-hard if `retrans serve` is not listening on `127.0.0.1:8788`; the UI is not started until that loopback probe succeeds.
 
-Then open the Vite URL (typically `http://127.0.0.1:5173`). Control API: `http://127.0.0.1:8788`. The loopback profile does not start the live ffmpeg worker. Live worker is `docker compose --profile live up --build` and needs `.env` (no host port).
+Then open **http://127.0.0.1:8788** — operator UI (`dist/`) and control API are same-origin on that port. Vite `http://127.0.0.1:5173` is `npm run dev` only (proxies `/api` → `http://127.0.0.1:8788`) and is **not** the operator path. The loopback profile does not start the live ffmpeg worker. Live worker is `docker compose --profile live up --build` and needs `.env` (no host port).
 
 ## Sign in → Drop link → Retrans (loopback, 127.0.0.1 only)
 
@@ -56,8 +56,9 @@ Operator run path on loopback `127.0.0.1` only — never `0.0.0.0` / LAN / hotsp
 How to run that path locally:
 
 - `docker compose --profile loopback up --build` (Linux host network) OR `./scripts/loopback.sh`
-- Open http://127.0.0.1:5173 — never `0.0.0.0`
-- Control API http://127.0.0.1:8788
+- Open http://127.0.0.1:8788 — never `0.0.0.0`
+- Control API is same-origin `/api/...` on 8788 (no Vite proxy required for operator-run)
+- `npm run dev` / Vite 5173 is **DEV ONLY** (proxies `/api` → 8788)
 
 ## Permission / fair use
 
@@ -127,12 +128,12 @@ Product string **RETRANS**. Code, files, and package: `retrans`. Chrome matches 
 
 ```bash
 npm install
-npm run dev      # Vite on 127.0.0.1; proxies /api → http://127.0.0.1:8788
-npm run build    # static dist/ for Infra to serve
+npm run build    # static dist/ for retrans serve on 8788 (base './')
+npm run dev      # Vite on 127.0.0.1:5173 — DEV ONLY; proxies /api → http://127.0.0.1:8788
 npm test
 ```
 
-Do not bind or proxy `0.0.0.0`. Vite `server.host` is `127.0.0.1` only.
+Operator open path is **http://127.0.0.1:8788** only. Fetch is relative `/api/...` (same-origin on 8788). Do not bind or proxy `0.0.0.0`. Vite `server.host` is `127.0.0.1` only. Vite `base` is `./` so `dist/` assets load when served from 8788.
 
 | Field | Env | Meaning |
 | --- | --- | --- |

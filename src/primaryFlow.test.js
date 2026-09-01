@@ -98,12 +98,22 @@ describe("primary-flow chrome lock", () => {
   });
 
   it("Start sends source_url only; no clip UI; Vite loopback 8788", () => {
+    const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+    const api = readFileSync(new URL("./retransApi.js", import.meta.url), "utf8");
     assert.match(main, /retransApi\.start\(\s*\{\s*source_url:\s*readField\(els\.source\)\.trim\(\)\s*,?\s*\}\s*\)/);
     assert.doesNotMatch(main, /\/api\/clip/);
     assert.doesNotMatch(html, /\/api\/clip/);
     assert.doesNotMatch(html, /\b[Cc]lip\b/);
     assert.match(vite, /const BACKEND = "http:\/\/127\.0\.0\.1:8788"/);
     assert.match(vite, /host: "127\.0\.0\.1"/);
+    assert.match(vite, /base:\s*["']\.\/["']/);
+    assert.doesNotMatch(vite, /host:\s*["']0\.0\.0\.0["']/);
+    assert.match(api, /\/api\/live\/start/);
+    assert.doesNotMatch(api, /http:\/\/127\.0\.0\.1:5173/);
+    assert.doesNotMatch(main, /http:\/\/127\.0\.0\.1:5173/);
+    assert.doesNotMatch(html, /:5173/);
+    assert.match(readme, /Open http:\/\/127\.0\.0\.1:8788/);
+    assert.doesNotMatch(readme, /Open http:\/\/127\.0\.0\.1:5173/);
   });
 
   it("boot routes configured → Beat 2; poll fail stays Idle", () => {
