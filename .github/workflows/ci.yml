@@ -51,3 +51,27 @@ jobs:
       - name: No package yet
         if: hashFiles('pyproject.toml') == ''
         run: echo "pyproject.toml not present; Docker live-image job is the Wave 1 gate."
+
+  loopback-host:
+    name: Loopback HOST refuse
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: HOST=0.0.0.0 is refused (no bind)
+        run: |
+          set +e
+          output="$(HOST=0.0.0.0 ./scripts/loopback.sh 2>&1)"
+          code=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$code" -ne 0
+          printf '%s\n' "$output" | grep -Eiq '127\.0\.0\.1|refuse'
+      - name: HOST=127.0.0.1 is allowed by the guard
+        run: |
+          # Guard only — no retrans/npm on PATH, so children never start.
+          set +e
+          output="$(PATH=/usr/bin:/bin HOST=127.0.0.1 ./scripts/loopback.sh 2>&1)"
+          set -e
+          printf '%s\n' "$output"
+          printf '%s\n' "$output" | grep -Eivq 'refusing HOST'
+          printf '%s\n' "$output" | grep -Eiq 'retrans not on PATH|npm not on PATH'
