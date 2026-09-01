@@ -42,6 +42,20 @@ CI checks that `HOST=0.0.0.0 ./scripts/loopback.sh` is refused (non-zero; no bin
 
 Then open the Vite URL (typically `http://127.0.0.1:5173`). Control API: `http://127.0.0.1:8788`. Default `docker compose up` remains the live ffmpeg worker (no host port).
 
+## Sign in → Drop link → Retrans (loopback, 127.0.0.1 only)
+
+Operator run path on loopback `127.0.0.1` only — never `0.0.0.0` / LAN / hotspot. Live page URL only. No clip path. No VOD.
+
+1. **Sign in:** operator supplies X Media Studio RTMP URL + stream key (env `RETRANS_X_RTMP_URL` / `RETRANS_X_RTMP_KEY` or the UI fields). Do not commit secrets.
+2. **Drop link:** paste/drop a live YouTube (or other live) page URL. Not a VOD/clip file.
+3. **Retrans:** fair-use ack, then Start LIVE. Still Create Broadcast + Go Live in Media Studio.
+
+How to run that path locally:
+
+- `docker compose --profile loopback up --build` (Linux host network) OR `./scripts/loopback.sh`
+- Open http://127.0.0.1:5173 — never `0.0.0.0`
+- Control API http://127.0.0.1:8788
+
 ## Permission / fair use
 
 This restreams a live source to the **operator’s** X account. The operator must have rights to the source. Restreaming someone else’s YouTube live without permission can violate YouTube’s Terms of Service and copyright. This is not legal advice. RETRANS is not a hidden bot.
