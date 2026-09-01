@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   backendFromResult,
+  canContinue,
   canStart,
   canStop,
   isUsableStatus,
@@ -18,43 +19,26 @@ function chromePill(result, previewOk = false) {
 
 const ready = {
   previewOk: true,
-  rtmpUrl: "rtmp://a.media.example/live",
-  rtmpKey: "secret",
+  configured: true,
   ack: true,
   state: "idle",
 };
 
 describe("enablement", () => {
-  it("Start needs preview, dest or stored creds, ack, and not LIVE", () => {
+  it("Continue needs preview, configured, and ack", () => {
+    assert.equal(canContinue(ready), true);
+    assert.equal(canContinue({ ...ready, previewOk: false }), false);
+    assert.equal(canContinue({ ...ready, configured: false }), false);
+    assert.equal(canContinue({ ...ready, ack: false }), false);
+  });
+
+  it("Start needs preview, configured, ack, and not LIVE/starting", () => {
     assert.equal(canStart(ready), true);
     assert.equal(canStart({ ...ready, previewOk: false }), false);
-    assert.equal(canStart({ ...ready, rtmpUrl: "" }), false);
-    assert.equal(canStart({ ...ready, rtmpKey: "" }), false);
+    assert.equal(canStart({ ...ready, configured: false }), false);
     assert.equal(canStart({ ...ready, ack: false }), false);
     assert.equal(canStart({ ...ready, state: "live" }), false);
     assert.equal(canStart({ ...ready, state: "starting" }), false);
-    assert.equal(
-      canStart({
-        previewOk: true,
-        rtmpUrl: "",
-        rtmpKey: "",
-        configured: true,
-        ack: true,
-        state: "idle",
-      }),
-      true,
-    );
-    assert.equal(
-      canStart({
-        previewOk: true,
-        rtmpUrl: "",
-        rtmpKey: "",
-        configured: false,
-        ack: true,
-        state: "idle",
-      }),
-      false,
-    );
   });
 
   it("Stop only when LIVE", () => {
@@ -137,7 +121,7 @@ describe("enablement", () => {
     assert.equal(pillLabel(pillFor({ previewOk: true, state: "idle" })), "Preview");
     assert.equal(
       transportHelper({ backend: "idle", error: "" }),
-      "Idle until preview + destination + ack",
+      "Idle until ready",
     );
 
     const main = readFileSync(new URL("./main.js", import.meta.url), "utf8");

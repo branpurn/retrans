@@ -2,6 +2,7 @@ import "./style.css";
 import { parseSourceUrl } from "./sourceUrl.js";
 import {
   backendFromResult,
+  canContinue,
   canStart,
   canStop,
   isUsableStatus,
@@ -11,22 +12,23 @@ import {
 } from "./enablement.js";
 import { retransApi } from "./retransApi.js";
 
+const SIGNIN_HELPER = "Save Media Studio RTMP once. Not X OAuth.";
+
 const els = {
+  beat1: document.getElementById("beat-1"),
+  beat2: document.getElementById("beat-2"),
+  beat3: document.getElementById("beat-3"),
   source: document.getElementById("source_url"),
   previewBtn: document.getElementById("preview-btn"),
   pasteHelper: document.getElementById("paste-helper"),
-  previewEmpty: document.getElementById("preview-empty"),
-  previewFilled: document.getElementById("preview-filled"),
-  thumb: document.getElementById("preview-thumb"),
-  liveBadge: document.getElementById("preview-live-badge"),
-  previewTitle: document.getElementById("preview-title"),
-  previewHost: document.getElementById("preview-host"),
+  previewCards: document.querySelectorAll("[data-preview]"),
   rtmpUrl: document.getElementById("rtmp_url"),
   rtmpKey: document.getElementById("rtmp_key"),
-  signInBtn: document.getElementById("signin-btn"),
-  clearCredsBtn: document.getElementById("clear-creds-btn"),
-  signInStatus: document.getElementById("signin-status"),
+  saveBtn: document.getElementById("save-btn"),
+  signInHelper: document.getElementById("signin-helper"),
   ack: document.getElementById("ack"),
+  continueBtn: document.getElementById("continue-btn"),
+  changeDest: document.getElementById("change-dest"),
   startBtn: document.getElementById("start-btn"),
   stopBtn: document.getElementById("stop-btn"),
   helper: document.getElementById("transport-helper"),
@@ -34,6 +36,7 @@ const els = {
 };
 
 const state = {
+  beat: 1,
   previewOk: false,
   parsed: null,
   backend: "idle",
@@ -56,33 +59,57 @@ function redact(text) {
   return out.replace(/rtmps?:\/\/\S+/gi, "[redacted-rtmp]");
 }
 
+function clearDestFields() {
+  els.rtmpUrl.value = "";
+  els.rtmpKey.value = "";
+  els.rtmpKey.type = "password";
+}
+
+function showBeat(n) {
+  state.beat = n;
+  els.beat1.classList.toggle("hidden", n !== 1);
+  els.beat2.classList.toggle("hidden", n !== 2);
+  els.beat3.classList.toggle("hidden", n !== 3);
+}
+
 function applyPreview(parsed) {
   state.parsed = parsed;
   state.previewOk = Boolean(parsed?.ok);
   els.pasteHelper.classList.toggle("hidden", parsed?.reason !== "youtube-first");
-  els.previewEmpty.classList.toggle("hidden", state.previewOk);
-  els.previewFilled.classList.toggle("hidden", !state.previewOk);
 
-  if (!parsed?.ok) return;
-
-  els.previewTitle.textContent = parsed.title;
-  els.previewHost.textContent = parsed.host;
-  els.liveBadge.classList.toggle("hidden", !parsed.isLive);
-  if (parsed.thumbnail) {
-    els.thumb.src = parsed.thumbnail;
-    els.thumb.alt = parsed.title;
-    els.thumb.hidden = false;
-  } else {
-    els.thumb.removeAttribute("src");
-    els.thumb.alt = "";
-    els.thumb.hidden = true;
+  for (const card of els.previewCards) {
+    card.classList.toggle("hidden", !state.previewOk);
+    if (!parsed?.ok) continue;
+    const title = card.querySelector(".preview-title");
+    const host = card.querySelector(".preview-host");
+    const badge = card.querySelector(".preview-live-badge");
+    const thumb = card.querySelector(".preview-thumb");
+    title.textContent = parsed.title;
+    host.textContent = parsed.host;
+    badge.classList.toggle("hidden", !parsed.isLive);
+    if (parsed.thumbnail) {
+      thumb.src = parsed.thumbnail;
+      thumb.alt = parsed.title;
+      thumb.hidden = false;
+    } else {
+      thumb.removeAttribute("src");
+      thumb.alt = "";
+      thumb.hidden = true;
+    }
   }
 }
 
 function clearPreview() {
   applyPreview(null);
-  els.previewEmpty.classList.remove("hidden");
-  els.previewFilled.classList.add("hidden");
+}
+
+function gate() {
+  return {
+    previewOk: state.previewOk,
+    configured: state.configured,
+    ack: els.ack.checked,
+    state: state.backend,
+  };
 }
 
 function render() {
@@ -90,19 +117,11 @@ function render() {
   els.pill.dataset.status = status;
   els.pill.textContent = pillLabel(status);
 
-  els.signInStatus.textContent = state.signInError
-    ? state.signInError
-    : state.configured
-      ? "Signed in (env or local store). Drop a link, then Retrans."
-      : "Save Media Studio RTMP URL + key once, or set env.";
-  els.startBtn.disabled = !canStart({
-    previewOk: state.previewOk,
-    rtmpUrl: els.rtmpUrl.value,
-    rtmpKey: els.rtmpKey.value,
-    configured: state.configured,
-    ack: els.ack.checked,
-    state: state.backend,
-  });
+  els.signInHelper.textContent = state.signInError || SIGNIN_HELPER;
+  els.saveBtn.disabled = !(els.rtmpUrl.value.trim() && els.rtmpKey.value);
+  els.previewBtn.disabled = parseSourceUrl(els.source.value).reason === "youtube-first";
+  els.continueBtn.disabled = !canContinue(gate());
+  els.startBtn.disabled = !canStart(gate());
   els.stopBtn.disabled = !canStop({ state: state.backend });
 
   els.helper.textContent = transportHelper({
@@ -112,21 +131,7 @@ function render() {
 }
 
 function runPreview() {
-  const parsed = parseSourceUrl(els.source.value);
-  if (!parsed.ok) {
-    state.previewOk = false;
-    state.parsed = parsed;
-    if (state.backend === "idle" || state.backend === "stopped") {
-      /* stay on current backend state */
-    }
-    applyPreview(parsed);
-    if (parsed.reason === "youtube-first") {
-      els.pasteHelper.classList.remove("hidden");
-    }
-    render();
-    return;
-  }
-  applyPreview(parsed);
+  applyPreview(parseSourceUrl(els.source.value));
   render();
 }
 
@@ -134,7 +139,6 @@ function invalidatePreviewIfSourceChanged() {
   if (!state.parsed?.ok) {
     const parsed = parseSourceUrl(els.source.value);
     els.pasteHelper.classList.toggle("hidden", parsed.reason !== "youtube-first");
-    els.previewBtn.disabled = parsed.reason === "youtube-first";
     render();
     return;
   }
@@ -145,7 +149,6 @@ function invalidatePreviewIfSourceChanged() {
     clearPreview();
   }
   const parsed = parseSourceUrl(els.source.value);
-  els.previewBtn.disabled = parsed.reason === "youtube-first";
   els.pasteHelper.classList.toggle("hidden", parsed.reason !== "youtube-first");
   render();
 }
@@ -189,6 +192,13 @@ function stopPolling() {
 els.previewBtn.addEventListener("click", runPreview);
 
 els.source.addEventListener("input", invalidatePreviewIfSourceChanged);
+els.source.addEventListener("blur", runPreview);
+els.source.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    runPreview();
+  }
+});
 els.rtmpUrl.addEventListener("input", render);
 els.rtmpKey.addEventListener("input", render);
 els.ack.addEventListener("change", render);
@@ -197,31 +207,49 @@ els.rtmpKey.addEventListener("blur", () => {
   els.rtmpKey.type = "password";
 });
 
-els.startBtn.addEventListener("click", async () => {
-  if (
-    !canStart({
-      previewOk: state.previewOk,
-      rtmpUrl: els.rtmpUrl.value,
-      rtmpKey: els.rtmpKey.value,
-      configured: state.configured,
-      ack: els.ack.checked,
-      state: state.backend,
-    })
-  ) {
-    return;
+els.saveBtn.addEventListener("click", async () => {
+  const rtmp_url = els.rtmpUrl.value.trim();
+  const rtmp_key = els.rtmpKey.value;
+  if (!rtmp_url || !rtmp_key) return;
+  els.saveBtn.disabled = true;
+  try {
+    const result = await retransApi.saveCredentials({ rtmp_url, rtmp_key });
+    if (result.ok && result.configured) {
+      state.configured = true;
+      state.signInError = "";
+      clearDestFields();
+      showBeat(2);
+    } else {
+      state.signInError = result.error || "save failed";
+    }
+  } catch {
+    state.signInError = "save failed";
+  } finally {
+    render();
   }
+});
+
+els.continueBtn.addEventListener("click", () => {
+  if (!canContinue(gate())) return;
+  showBeat(3);
+  render();
+});
+
+els.changeDest.addEventListener("click", (event) => {
+  event.preventDefault();
+  clearDestFields();
+  state.signInError = "";
+  showBeat(1);
+  render();
+});
+
+els.startBtn.addEventListener("click", async () => {
+  if (!canStart(gate())) return;
   els.startBtn.disabled = true;
   try {
-    const overrideUrl = els.rtmpUrl.value.trim();
-    const overrideKey = els.rtmpKey.value;
-    const payload = { source_url: els.source.value.trim() };
-    if (overrideUrl && overrideKey) {
-      payload.rtmp_url = overrideUrl;
-      payload.rtmp_key = overrideKey;
-    }
-    const result = await retransApi.start(payload);
-    els.rtmpKey.value = "";
-    els.rtmpKey.type = "password";
+    const result = await retransApi.start({
+      source_url: els.source.value.trim(),
+    });
     applyBackend(result);
   } catch {
     state.backend = "error";
@@ -242,54 +270,26 @@ els.stopBtn.addEventListener("click", async () => {
   }
 });
 
-els.signInBtn.addEventListener("click", async () => {
-  const rtmp_url = els.rtmpUrl.value.trim();
-  const rtmp_key = els.rtmpKey.value;
-  if (!rtmp_url || !rtmp_key) {
-    state.signInError = "RTMP URL and stream key are required to sign in";
-    render();
-    return;
-  }
-  els.signInBtn.disabled = true;
-  try {
-    const result = await retransApi.saveCredentials({ rtmp_url, rtmp_key });
-    state.configured = Boolean(result.configured);
-    els.rtmpKey.value = "";
-    els.rtmpKey.type = "password";
-    state.signInError = result.ok ? "" : result.error || "sign-in failed";
-  } catch {
-    state.signInError = "sign-in failed";
-  } finally {
-    els.signInBtn.disabled = false;
-    render();
-  }
-});
-
-els.clearCredsBtn.addEventListener("click", async () => {
-  els.clearCredsBtn.disabled = true;
-  try {
-    const result = await retransApi.clearCredentials();
-    state.configured = Boolean(result.configured);
-  } catch {
-    /* keep current configured flag */
-  } finally {
-    els.clearCredsBtn.disabled = false;
-    render();
-  }
-});
-
 async function boot() {
   render();
   try {
     const creds = await retransApi.credentials();
-    if (creds.httpStatus === 200) state.configured = Boolean(creds.configured);
+    if (creds.httpStatus === 200 && creds.configured) state.configured = true;
   } catch {
-    /* boot credentials failure: dest fields still work as one-shot */
+    /* GET fail treated as not configured → Beat 1 */
   }
   try {
     applyStatus(await retransApi.status());
   } catch {
     /* boot status failure: stay Idle; keep idle transport helper */
+  }
+  if (!state.configured) {
+    showBeat(1);
+  } else if (state.backend === "starting" || state.backend === "live") {
+    if (state.previewOk) els.ack.checked = true;
+    showBeat(3);
+  } else {
+    showBeat(2);
   }
   render();
 }

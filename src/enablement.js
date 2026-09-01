@@ -21,11 +21,12 @@ export function backendFromResult(result) {
   return typeof result.state === "string" && result.state ? result.state : "error";
 }
 
-export function canStart({ previewOk, rtmpUrl, rtmpKey, configured, ack, state }) {
-  const destOk =
-    Boolean(configured) ||
-    Boolean(String(rtmpUrl ?? "").trim() && String(rtmpKey ?? ""));
-  return Boolean(previewOk && destOk && ack && !LIVE_STATES.has(state));
+export function canContinue({ previewOk, configured, ack }) {
+  return Boolean(previewOk && configured && ack);
+}
+
+export function canStart({ previewOk, configured, ack, state }) {
+  return Boolean(canContinue({ previewOk, configured, ack }) && !LIVE_STATES.has(state));
 }
 
 export function canStop({ state }) {
@@ -65,5 +66,5 @@ export function pillLabel(status) {
 export function transportHelper({ backend, error }) {
   if (backend === "live") return "Retransmitting live to X";
   if (backend === "error" && nonEmptyError(error)) return error;
-  return "Idle until preview + destination + ack";
+  return "Idle until ready";
 }
