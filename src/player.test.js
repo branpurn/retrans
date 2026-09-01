@@ -1,7 +1,18 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { attachPlayer, NAMED_TEE, OUTBOUND_LABEL, outboundSrc, playerShouldAttach } from "./player.js";
+import {
+  attachPlayer,
+  NAMED_TEE,
+  OUTBOUND_LABEL,
+  outboundMediaPath,
+  outboundSrc,
+  playerShouldAttach,
+  sessionOutboundSrc,
+} from "./player.js";
+
+const SID = "abc123def456";
+const HLS = `/live/${SID}/index.m3u8`;
 
 function fakeVideo() {
   const attrs = {};
@@ -55,23 +66,36 @@ describe("outbound player", () => {
     );
   });
 
-  it("leaves src empty until a same-origin tee is named; never YouTube or thumbs", () => {
+  it("src is path-only /live/<session_id>/index.m3u8; never YouTube, preview, or thumbs", () => {
     assert.equal(NAMED_TEE, "");
     assert.equal(OUTBOUND_LABEL, "Outbound");
     assert.equal(outboundSrc(), "");
     assert.equal(outboundSrc(""), "");
+    assert.equal(outboundMediaPath(SID), HLS);
+    assert.equal(outboundMediaPath("not-hex"), "");
+    assert.equal(outboundSrc(HLS), HLS);
+    assert.equal(outboundSrc(`http://127.0.0.1:8788${HLS}`), HLS);
     assert.equal(outboundSrc("https://www.youtube.com/watch?v=jfKfPfyJRdk"), "");
     assert.equal(outboundSrc("https://youtu.be/jfKfPfyJRdk"), "");
     assert.equal(outboundSrc("https://i.ytimg.com/vi/abc/hqdefault.jpg"), "");
     assert.equal(outboundSrc("/api/live/preview"), "");
-    assert.equal(outboundSrc("http://0.0.0.0:8788/api/live/monitor.m3u8"), "");
-    assert.equal(outboundSrc("http://127.0.0.1:5173/out.m3u8"), "");
+    assert.equal(outboundSrc("http://0.0.0.0:8788/live/abc123def456/index.m3u8"), "");
+    assert.equal(outboundSrc("http://127.0.0.1:5173/live/abc123def456/index.m3u8"), "");
     assert.equal(outboundSrc("//evil.example/x"), "");
-    assert.equal(outboundSrc("/api/live/monitor.m3u8"), "/api/live/monitor.m3u8");
+    assert.equal(outboundSrc("/api/live/monitor.m3u8"), "");
+    assert.equal(outboundSrc("/api/live/out.ts"), "");
+    assert.equal(sessionOutboundSrc({ state: "idle", outbound_url: HLS }), "");
+    assert.equal(sessionOutboundSrc({ state: "live", outbound_url: HLS }), HLS);
+    assert.equal(sessionOutboundSrc({ state: "starting", session_id: SID }), HLS);
     assert.equal(
-      outboundSrc("http://127.0.0.1:8788/api/live/out.ts"),
-      "/api/live/out.ts",
+      sessionOutboundSrc({
+        state: "live",
+        outbound_url: "/api/live/preview",
+        session_id: SID,
+      }),
+      HLS,
     );
+    assert.equal(sessionOutboundSrc({ state: "stopped", session_id: SID }), "");
   });
 
   it("shows <video> without wiring a fake src; hides and clears when idle", () => {
@@ -89,10 +113,10 @@ describe("outbound player", () => {
     assert.equal(video.getAttribute("src"), null);
     assert.equal(video.classList.contains("hidden"), true);
 
-    next = attachPlayer(video, { attach: true, src: "/api/live/monitor.m3u8" });
+    next = attachPlayer(video, { attach: true, src: HLS });
     assert.equal(next.attached, true);
-    assert.equal(next.src, "/api/live/monitor.m3u8");
-    assert.equal(video.getAttribute("src"), "/api/live/monitor.m3u8");
+    assert.equal(next.src, HLS);
+    assert.equal(video.getAttribute("src"), HLS);
   });
 
   it("chrome is HTML5 video + audio on Beat 3; no YouTube embed, clip, or extra routes", () => {
@@ -123,7 +147,7 @@ describe("outbound player", () => {
     assert.match(main, /playerShouldAttach/);
     assert.match(main, /NAMED_TEE/);
     assert.match(main, /OUTBOUND_LABEL/);
-    assert.match(main, /sess\.outbound_url/);
+    assert.match(main, /sessionOutboundSrc/);
     assert.doesNotMatch(main, /video\.src\s*=\s*.*source_url/);
     assert.doesNotMatch(main, /preview-thumb.*outbound-player/);
     assert.doesNotMatch(api, /\/api\/live\/monitor/);
@@ -131,5 +155,6 @@ describe("outbound player", () => {
     assert.doesNotMatch(api, /\/api\/live\/hls/);
     assert.match(api, /fetch\(START/);
     assert.match(api, /fetch\(STATUS/);
+    assert.match(api, /outbound_url/);
   });
 });
