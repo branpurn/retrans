@@ -16,7 +16,10 @@ Product string: **RETRANS**. Code/repo: `retrans`. Frontend owns the operator UI
 ### Status rules
 
 - **Idle-on-poll-fail.** Boot `GET /api/live/status` failure and mid-session status poll / network failures MUST keep the current pill (fresh load = Idle). Never flip the pill to Error for a failed status poll. Never invent helper text like `status failed`.
-- **Error pill** only after a real start failure (HTTP 400 or equivalent start failure) or a usable status payload (`GET /api/live/status` HTTP 200) with nonempty `status.error` / `state === "error"`. Not on status poll fail. Idle + `error: null` (or empty) stays Idle / Preview.
+- **Error pill** only after a real start failure (HTTP 400 or equivalent start failure) or a usable status payload (`GET /api/live/status` HTTP 200) with nonempty `status.error` / `state === "error"`. Not on status poll fail. Idle + `error: null` (or empty) stays Idle / Preview. Never invent Error from a poll fail.
+- **Error sticks until Stop.** After the UI enters Error (start HTTP 400 / equivalent, or usable status with nonempty `status.error` / `state === "error"`), keep the pill Error and the error helper until the operator presses **Stop**. Do **not** auto-flip Error → Idle / Preview / Stopped when a later successful status poll returns `idle` / empty error / no longer `error`.
+- **Stop clears Error.** `POST /api/live/stop` (or Stop click) is the dismiss path from Error. After Stop succeeds, normal status mapping resumes (Idle / Stopped per existing locks).
+- **Stop enablement.** Stop is enabled while LIVE **or** while Error (so Error can be cleared).
 - **Pill lock.** Exact `data-status` / backend → copy + tokens. Do not invent other labels.
 
 | data-status / backend | Pill copy (exact) | Tokens |
@@ -62,7 +65,7 @@ Unchecked = Start disabled.
 ### 5. Transport
 
 - Start live retrans (primary)
-- Stop (danger, enabled only while LIVE)
+- Stop (danger, enabled while LIVE or Error)
 - Helper (exact; fully readable, never clipped):
   - Default / non-LIVE non-Error: `Idle until preview + destination + ack`
   - While LIVE: `Retransmitting live to X`
@@ -71,7 +74,9 @@ Unchecked = Start disabled.
 ## Enablement
 
 - Start enabled only when: preview ok + RTMP URL + stream key + ack checked + status not LIVE
-- Stop enabled only when LIVE
+- Stop enabled when LIVE or Error
+- Error sticks until Stop. Do not auto-flip Error → Idle / Preview / Stopped on a later successful status poll that returns `idle` / empty error / no longer `error`.
+- Stop (`POST /api/live/stop`) clears Error; after Stop succeeds, normal status mapping resumes (Idle / Stopped).
 - Status poll / network / non-OK `GET /api/live/status` does not change the pill and does not invent `status failed`
 - Start HTTP 400 (or equivalent start failure) or usable status with nonempty `status.error` / state error → Error pill + API error string as-is (rtmp secrets redacted only)
 
