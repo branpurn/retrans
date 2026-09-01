@@ -27,7 +27,7 @@ Operator dependencies: **ffmpeg** and **yt-dlp** (streamlink optional fallback).
 
 ## Operator loopback (one command)
 
-UI + `retrans serve` together, both on `127.0.0.1` only (never `0.0.0.0` / LAN / hotspot).
+**Operator URL:** `http://127.0.0.1:8788` **only** (same origin serves UI + `/api`). Never `0.0.0.0` / LAN / hotspot. Vite `5173` is not the operator path (`npm run dev` may still proxy `/api` → 8788; operators open 8788).
 
 Linux + Docker (host network so `retrans serve` can bind `127.0.0.1:8788` on the host; publishing `8788:8788` is forbidden because that would require listen `0.0.0.0` inside the container):
 
@@ -35,15 +35,15 @@ Linux + Docker (host network so `retrans serve` can bind `127.0.0.1:8788` on the
 docker compose --profile loopback up --build
 ```
 
-Without Docker (`pip install -e .` and `npm install` first):
+Without Docker (`pip install -e .` and `npm install` / `npm run build` first):
 
 ```bash
 ./scripts/loopback.sh
 ```
 
-CI checks that `HOST=0.0.0.0 ./scripts/loopback.sh` is refused (non-zero; no bind). Both paths fail-hard if `retrans serve` is not listening on `127.0.0.1:8788`; the UI is not started until that loopback probe succeeds.
+CI checks that `HOST=0.0.0.0 ./scripts/loopback.sh` is refused (non-zero; no bind). Both paths fail-hard if `retrans serve` is not listening on `127.0.0.1:8788`.
 
-Then open **http://127.0.0.1:8788** — operator UI (`dist/`) and control API are same-origin on that port. Vite `http://127.0.0.1:5173` is `npm run dev` only (proxies `/api` → `http://127.0.0.1:8788`) and is **not** the operator path. The loopback profile does not start the live ffmpeg worker. Live worker is `docker compose --profile live up --build` and needs `.env` (no host port).
+Open http://127.0.0.1:8788. The loopback profile does not start the live ffmpeg worker. Live worker is `docker compose --profile live up --build` and needs `.env` (no host port).
 
 ## Sign in → Drop link → Retrans (loopback, 127.0.0.1 only)
 
@@ -58,7 +58,7 @@ How to run that path locally:
 - `docker compose --profile loopback up --build` (Linux host network) OR `./scripts/loopback.sh`
 - Open http://127.0.0.1:8788 — never `0.0.0.0`
 - Control API is same-origin `/api/...` on 8788 (no Vite proxy required for operator-run)
-- `npm run dev` / Vite 5173 is **DEV ONLY** (proxies `/api` → 8788)
+- Vite `5173` is not the operator path (`npm run dev` only; proxies `/api` → 8788)
 
 ## Permission / fair use
 
@@ -129,11 +129,11 @@ Product string **RETRANS**. Code, files, and package: `retrans`. Chrome matches 
 ```bash
 npm install
 npm run build    # static dist/ for retrans serve on 8788 (base './')
-npm run dev      # Vite on 127.0.0.1:5173 — DEV ONLY; proxies /api → http://127.0.0.1:8788
+npm run dev      # Vite on 127.0.0.1:5173 — not the operator path; proxies /api → http://127.0.0.1:8788
 npm test
 ```
 
-Operator open path is **http://127.0.0.1:8788** only. Fetch is relative `/api/...` (same-origin on 8788). Do not bind or proxy `0.0.0.0`. Vite `server.host` is `127.0.0.1` only. Vite `base` is `./` so `dist/` assets load when served from 8788.
+**Operator URL:** `http://127.0.0.1:8788` **only** (same origin serves UI + `/api`). Vite `5173` is not the operator path. Fetch is relative `/api/...`. Do not bind or proxy `0.0.0.0`. Vite `server.host` is `127.0.0.1` only. Vite `base` is `./` so `dist/` assets load when served from 8788.
 
 | Field | Env | Meaning |
 | --- | --- | --- |
