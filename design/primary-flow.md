@@ -10,7 +10,7 @@ Frontend owns this UI. Implement these rules now.
 
 RETRANS operator. Live YouTube → X. Three beats. Localhost.
 
-1. Sign in
+1. Keys / Configuration
 2. Drop link
 3. Retrans
 
@@ -20,7 +20,7 @@ Bind and proxy **127.0.0.1 only**. Never `0.0.0.0`, LAN, or hotspot.
 
 **Operator URL:** `http://127.0.0.1:8788` **only** (same origin serves UI + `/api`). **One Docker compose** is the operator form factor: that compose binds **127.0.0.1:8788 only**. Operators open that URL. Not Vite `5173`. Not a second published port. Not `0.0.0.0` / LAN / hotspot. Vite `5173` is not the operator path (dev proxy may still exist for Frontend work; operators open 8788).
 
-Sign-in is **not** X OAuth. Sign-in is a Media Studio stream-key save (named keys; RTMP URL hidden by default).
+Beat 1 is **Keys / Configuration** — named Media Studio stream-key save (RTMP URL hidden by default). Not a Sign-in gate. Not X OAuth. No “Sign in with X”.
 
 ## Chrome
 
@@ -58,61 +58,68 @@ Sign-in is **not** X OAuth. Sign-in is a Media Studio stream-key save (named key
 On load:
 
 1. `GET /api/live/keys`
-2. Empty `keys` list (or first visit / GET fail treated as empty) → **Beat 1**
-3. Any saved named key → skip to **Beat 2**
+2. Empty `keys` list (or first visit / GET fail treated as empty) → **Beat 1 (Keys / Configuration)** so the operator can **Add**. Do **not** frame empty-keys as Sign in.
+3. Keys present → still **Beat 1** (named-key list with Open / Edit / Select / Delete). Operator goes to **Beat 2** only with a **selected** named key. Do **not** skip Beat 1 because keys exist (that was the Sign-in gate).
+
+Keys / Configuration is **not** a Sign-in gate. Empty keys never mean “Sign in”. Saved named keys are not Delete-only.
 
 Forward only (still three beats — no fourth page):
 
-- Beat 1 first Save success → Beat 2
+- Beat 1 **Select** (or first **Save** that also selects the new key) → Beat 2
 - Beat 2 Continue → Beat 3
 
 Same-beat / back links, not a settings maze:
 
 - On Beat 1: **Add** another named key (Add + Save) stays on Beat 1
-- On Beat 2: small **Change destination** / **Add key** link → Beat 1 (empty fields; never prefill secrets)
-- On Beat 3: **Drop another** / back to Beat 2 with an unused named key. If no unused key, helper to add a key → Beat 1 (empty fields)
+- On Beat 2: small **Change destination** / **Keys** link → Beat 1 (the Keys / Configuration panel; empty Add / Edit fields; never prefill secrets)
+- On Beat 3: **Drop another** / back to Beat 2 with an unused named key. If no unused key, helper to add a key → Beat 1 (Keys / Configuration; empty Add fields)
 
 No other pages. No OAuth screens. No clip-post. No `/api/live/credentials` chrome.
 
-## Beat 1 — Sign in
+## Beat 1 — Keys / Configuration
 
-Shown when `GET /api/live/keys` → empty `keys` (or first visit). Also when the operator chooses Add key / Change destination from Beat 2 or Beat 3.
+Shown when `GET /api/live/keys` → empty `keys` (or first visit) so the operator can **Add**. Also shown when keys are present (list is not Delete-only). Also when the operator chooses **Change destination** / **Keys** from Beat 2 or Beat 3.
+
+This panel is **not** a Sign-in gate. Do not title, helper, or boot-copy it as Sign in. Not X OAuth. No “Sign in with X”.
 
 | Element | Rule |
 | --- | --- |
-| Title | `Sign in` — clickable `?` next to this title (same beat) |
-| Helper (one short line) | `Save Media Studio RTMP once. Not X OAuth.` — default visible helper |
+| Title | `Keys` / `Configuration` — clickable `?` next to this title (same beat). Designer owns the visual title. |
+| Helper (one short line) | `Save a named Media Studio stream key.` — default visible helper. Not Sign in. Not X OAuth. |
 | Field | Optional short name — `type="text"` |
-| Field | Stream key — `type="password"` (primary; **no** RTMP URL field by default) |
+| Field | Stream key — `type="password"` (primary; **no** RTMP URL field by default). On **Open** / **Edit**, this field is empty and never shows the old key. Empty key field on Save of an existing row = keep the existing key unless a new key is typed — say that clearly. Do not invent API fields beyond `PUT /api/live/keys`. |
 | Advanced | Collapsed disclosure **OFF** by default. When on: RTMP URL override (`type="text"`). Empty override = default ingest |
-| List | Named key list — **names only**, never keys |
+| List | Named key list — **names only**, never keys. Each saved row MUST support the actions below (labels for Frontend; Designer owns visual labels) |
+| Open / Edit | **Open** / **Edit** — reopen the row to edit name + replace stream key (password field; never show the old key value). Empty key field = keep existing key unless a new key is typed. Save uses `PUT /api/live/keys` (same Add/update route). |
+| Select | **Select** — choose this key for Drop link / Retrans destination |
+| Delete | **Delete** — `DELETE /api/live/keys/<id>` (confirm is fine; not a settings page) |
 | Add | **Add** another named key on this beat (Add + Save via `PUT /api/live/keys`) |
-| Delete | `DELETE /api/live/keys/<id>` (confirm is fine; not a settings page) |
 | Primary | **Save** |
 
 Default ingest (not a secret; document it): `rtmps://va.pscp.tv:443/x`. Hide the RTMP URL field unless Advanced is on.
 
-- Save calls `PUT /api/live/keys` with the stream key + optional name + optional `rtmp_url` override. Omit `rtmp_url` to use the default ingest.
-- On first Save success → Beat 2. Add + Save stays on Beat 1. Clear the key field from the DOM. **Never show secrets again after save.**
+- **Add** + **Save** calls `PUT /api/live/keys` with the stream key + optional name + optional `rtmp_url` override. Omit `rtmp_url` to use the default ingest.
+- **Open** / **Edit** Save of an existing named key also uses `PUT /api/live/keys` (the existing Add/update route). Empty stream-key field on that update = keep the stored key; a typed value replaces it. Do not invent extra API fields or routes.
+- First Save that also **Select**s the new key → Beat 2. Add + Save stays on Beat 1. **Select** on a saved row → Beat 2 (that key is the Drop link / Retrans destination).
+- Clear the key field from the DOM after Save. **Never show secrets again after save.**
 - Stream key stays `type="password"`. After Save, the key is **never shown again** (fields cleared from the DOM). `GET /api/live/keys` returns id + name (+ `in_use` if status does not already say so) **only** — never echo `rtmp_key`, `rtmp_url`, or the key value.
-- If any named key exists at boot, skip this beat.
-- Sign-in is a Media Studio stream-key save. Not X OAuth. No “Sign in with X” button.
+- Do **not** skip this beat because keys exist. Keys / Configuration is not a Sign-in gate.
+- Not X OAuth. No “Sign in with X”.
 
-### Sign in `?` help (same beat)
+### Keys / Configuration `?` help (same beat)
 
-Clickable `?` next to the **Sign in** title. Show/hide short help on this beat (disclosure / inline panel). Stays inside the 480px one-beat console. No new route. No modal maze. No OAuth screen. Not a settings maze. Not a fifth block.
+Clickable `?` next to the **Keys / Configuration** panel title. Show/hide short help on this beat (disclosure / inline panel). Stays inside the 480px one-beat console. No new route. No modal maze. No OAuth screen. Not a settings maze. Not a fifth block.
 
-Default visible helper stays the one line: `Save Media Studio RTMP once. Not X OAuth.` The `?` does not replace that line.
+Default visible helper stays the one line: `Save a named Media Studio stream key.` The `?` does not replace that line.
 
 Help copy — short steps only (exact path names):
 
-1. Open studio.x.com (Creator / Media Studio Producer)
-2. Sources → Create Source (RTMP)
-3. Copy the stream key into the Sign in field (not a two-field URL + key form)
+1. Media Studio **Sources** → **Create Source** (RTMP)
+2. Copy the stream key into the key field (not a two-field URL + key form)
 
 Also one short line in that help (not a Broadcast UI): **Broadcasts → Create Broadcast** + **Go Live** still happen on X after Retrans starts. That is not this beat. Do not add Broadcast UI here.
 
-No extra Media Studio maze beyond this `?` disclosure. No settings page. No “Sign in with X”.
+No extra Media Studio maze beyond this `?` disclosure. No settings page. No “Sign in with X”. No Sign-in framing.
 
 ## Beat 2 — Drop link
 
@@ -165,7 +172,7 @@ Enable Continue only when **all** are true:
 
 YouTube first. Non-YouTube: helper `YouTube first` (exact). Other URLs stay not-ok for preview.
 
-Optional: small **Change destination** / **Add key** link (not a button row, not a settings page) that returns to Beat 1 with empty fields.
+Optional: small **Change destination** / **Keys** link (not a button row, not a settings page) that returns to Beat 1 (Keys / Configuration panel; empty Add / Edit fields; never prefill secrets).
 
 No RTMP fields on this beat. No start/stop. Preview payload has no RTMP fields — never display rtmp secrets from preview. Named-key picker shows **names only**.
 
@@ -207,14 +214,14 @@ After Start, `GET /api/live/status` (`sessions[]`) drives per-session pills (`st
 
 ## Live API (Frontend contract)
 
-Operator path is **one Docker compose** → `http://127.0.0.1:8788` (same origin UI + `/api`). Vite may still proxy `/api` → `http://127.0.0.1:8788` for Frontend work; operators open 8788. Never `0.0.0.0`. No `/api/clip` route. No clip UI. No `/api/live/credentials` chrome — Sign-in consumes `/api/live/keys`.
+Operator path is **one Docker compose** → `http://127.0.0.1:8788` (same origin UI + `/api`). Vite may still proxy `/api` → `http://127.0.0.1:8788` for Frontend work; operators open 8788. Never `0.0.0.0`. No `/api/clip` route. No clip UI. No `/api/live/credentials` chrome — Keys / Configuration consumes `/api/live/keys`.
 
 These routes are the lock. Do not invent extra routes beyond keys list/add/delete + start/stop/status/preview.
 
 | Method | Path | Body / response |
 | --- | --- | --- |
-| `GET` | `/api/live/keys` | List named keys. `200` with `keys[]` of `{ id, name }` plus `in_use` if `status.sessions[]` does not already say so. **Never** echo `rtmp_key`, `rtmp_url`, or the key value. Empty `keys` = not configured (Beat 1). |
-| `PUT` | `/api/live/keys` | Add/update a named key. Body: stream key + optional `name` + optional `rtmp_url` override. Omit `rtmp_url` to use default ingest `rtmps://va.pscp.tv:443/x`. `200` success (id + name only). **Never** echo the key. |
+| `GET` | `/api/live/keys` | List named keys. `200` with `keys[]` of `{ id, name }` plus `in_use` if `status.sessions[]` does not already say so. **Never** echo `rtmp_key`, `rtmp_url`, or the key value. Empty `keys` → Keys / Configuration so the operator can **Add** (not Sign in). |
+| `PUT` | `/api/live/keys` | Add/update a named key (Add + Save, and Open / Edit Save). Body: stream key + optional `name` + optional `rtmp_url` override. Omit `rtmp_url` to use default ingest `rtmps://va.pscp.tv:443/x`. On update of an existing named key, an empty / omitted stream-key field means keep the stored key unless a new key is typed. `200` success (id + name only). **Never** echo the key. |
 | `DELETE` | `/api/live/keys/<id>` | Remove a named key. `200` success. **Never** echo secrets. |
 | `GET` | `/api/live/preview` | Query `source_url`. `200 { "ok": true, "source_url": "…", "title": "…", "is_live": true \| false }`. Title from yt-dlp `-J` `title` (may be `""` if unknown). `is_live` true when `live_status` is `is_live` or JSON `is_live` is true. Confirmed `not_live` / `was_live` stay `200` + title + `is_live:false`. YouTube first. `400 { "ok": false, "error": "…" }` missing/invalid URL. `502 { "ok": false, "error": "…" }` when yt-dlp fails (not `200` empty/false). Drop-link chrome for that 502: Beat 2 Preview (hide card; `error` as-is; Continue disabled; pill stays Idle — not Transport Error). No ffmpeg / restream. Never `rtmp_url` / `rtmp_key` / `destination`. |
 | `POST` | `/api/live/start` | `{ "source_url":"…", "key_id":"…" }` **only** → `200 { "ok": true, "state": "starting" }` (process up → later status `live`). Never `rtmp_url` / `rtmp_key`. `400` missing/invalid / not a live stream. `409` key already in a live/starting session. |
@@ -251,8 +258,8 @@ Reuse [layout-v1.md](layout-v1.md) `:root` tokens:
 
 ## Out of primary
 
-No settings pages. No clip-post. No clip download. No schedule. No OAuth screens. No showing keys after save. No `/api/live/credentials` chrome. No Media Studio maze beyond the Beat 1 `?` disclosure (same-beat inline help; default helper stays the one short line). No five-block 720px chrome. No Vite `5173` operator path. No second published port.
+No settings pages. No clip-post. No clip download. No schedule. No OAuth screens. No Sign-in framing. No “Sign in with X”. No showing keys after save. No `/api/live/credentials` chrome. No Media Studio maze beyond the Beat 1 `?` disclosure (same-beat inline help; default helper stays the one short line). No five-block 720px chrome. No Vite `5173` operator path. No second published port.
 
 ## Done when
 
-Frontend can ship the three beats against this file without inventing chrome, OAuth, or clip UI. Beat 1 is keys-only Sign in (default ingest, Advanced off, named key list, clickable `?`). Beat 3 is concurrent `sessions[]` (one named key each). Operator form factor is one Docker compose on `http://127.0.0.1:8788`.
+Frontend can ship the three beats against this file without inventing chrome, OAuth, Sign-in framing, or clip UI. Beat 1 is **Keys / Configuration** (default ingest, Advanced off, named key list with Open / Edit / Select / Delete, clickable `?`). Not a Sign-in gate. Beat 3 is concurrent `sessions[]` (one named key each). Operator form factor is one Docker compose on `http://127.0.0.1:8788`.
