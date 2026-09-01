@@ -66,6 +66,16 @@ describe("primary-flow chrome lock", () => {
     assert.doesNotMatch(beat3, /id="rtmp_key"/);
   });
 
+  it("does not paint parseSourceUrl as display before preview API", () => {
+    assert.doesNotMatch(main, /applyPreview\(\s*parseSourceUrl/);
+    assert.match(main, /els\.source\.value = result\.source_url/);
+    assert.match(main, /runPreview\(\)/);
+    assert.match(main, /retransApi\.preview\(/);
+    assert.match(main, /result\.is_live === true/);
+    assert.doesNotMatch(main, /YouTube source/);
+    assert.doesNotMatch(main, /YouTube live/);
+  });
+
   it("Start sends source_url only; no clip UI; Vite loopback 8788", () => {
     assert.match(main, /retransApi\.start\(\s*\{\s*source_url:\s*els\.source\.value\.trim\(\)\s*,?\s*\}\s*\)/);
     assert.doesNotMatch(main, /\/api\/clip/);
