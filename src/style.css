@@ -70,6 +70,11 @@ body {
   color: var(--accent);
 }
 
+.pill[data-status="starting"] {
+  background: var(--warn);
+  color: #0f1419;
+}
+
 .pill[data-status="live"] {
   background: var(--live);
   color: #fff;
