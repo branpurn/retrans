@@ -25,9 +25,9 @@ There is **no public X API** to create a live broadcast or mint an RTMP key. Sen
 
 Operator image: **`ghcr.io/branpurn/retrans`** (Vite `dist/` + ffmpeg + yt-dlp + streamlink + `retrans serve`). Secrets via `.env` / env vars only (copy `.env.example`; never commit `.env`).
 
-## Operator (GHCR)
+## Operator (GHCR + published loopback)
 
-**Operator URL:** `http://127.0.0.1:8788` **only**.
+Pull the image and publish **only** `127.0.0.1:8788:8788`. **Operator URL:** `http://127.0.0.1:8788` **only**. Not `--network host`. Host never binds `0.0.0.0:8788`.
 
 ```bash
 docker rm -f retrans
@@ -35,11 +35,18 @@ docker pull ghcr.io/branpurn/retrans:latest
 docker run --rm --init -p 127.0.0.1:8788:8788 IMAGE retrans serve
 ```
 
-Open http://127.0.0.1:8788. Same origin serves UI + `/api`. Host publish is `127.0.0.1:8788` only — never host `0.0.0.0` / LAN / hotspot. Never `-p 8788:8788`. NOT `--network host`. Vite `5173` is not the operator path.
+`IMAGE` is `ghcr.io/branpurn/retrans:latest` (or a release tag). Open http://127.0.0.1:8788. Same origin serves UI + `/api`. Host publish is `127.0.0.1:8788:8788` only — never host `0.0.0.0` / LAN / hotspot. Never `-p 8788:8788`. NOT `--network host`. Vite `5173` is not the operator path.
 
-Inside the container, `retrans serve` listens on `0.0.0.0:8788` (container veth only) so `-p 127.0.0.1:8788:8788` reaches the process. That is not a host LAN publish. On the host, `retrans serve` still binds `127.0.0.1:8788` only.
+Rootless Docker does not put `network_mode: host` / `--network host` on the real host `127.0.0.1`. Inside the container, `retrans serve` listens on `0.0.0.0:8788` (container veth only) so `-p 127.0.0.1:8788:8788` reaches the process. Infra sets `HOST=0.0.0.0` **inside the container only**. That is not a host LAN publish. On the host, `retrans serve` still binds `127.0.0.1:8788` only.
 
-Loopback is one service and does not start the live ffmpeg worker. Live workers (`docker compose --profile live up`) stay idle without keys; concurrent keyed workers are allowed. Tagged images come from GitHub Releases (or `workflow_dispatch`). Infra republishes `:latest` after a MERGEABLE SHA is on main.
+Same mapping via compose (one loopback service; `ports: 127.0.0.1:8788:8788`; no `network_mode: host`; `init: true`; does not start the live ffmpeg worker):
+
+```bash
+docker pull ghcr.io/branpurn/retrans:<tag>
+RETRANS_IMAGE_TAG=<tag> docker compose --profile loopback up
+```
+
+Live workers (`docker compose --profile live up`) stay idle without keys; concurrent keyed workers are allowed. Tagged images come from GitHub Releases (or `workflow_dispatch`). Infra republishes `:latest` after a MERGEABLE SHA is on main.
 
 ## Sign in → Drop link → Retrans (loopback, 127.0.0.1 only)
 
@@ -57,6 +64,7 @@ docker pull ghcr.io/branpurn/retrans:latest
 docker run --rm --init -p 127.0.0.1:8788:8788 IMAGE retrans serve
 ```
 
+- Or `RETRANS_IMAGE_TAG=<tag> docker compose --profile loopback up` (same `127.0.0.1:8788:8788` publish)
 - Open http://127.0.0.1:8788 — never host `0.0.0.0`
 - Control API is same-origin `/api/...` on 8788
 - Vite `5173` is not the operator path
@@ -101,7 +109,9 @@ retrans resolve 'https://www.youtube.com/watch?v=…'
 
 ## Local HTTP control API (`retrans serve`)
 
-On the host, `retrans serve` **must** listen on `127.0.0.1:8788`. Inside a container it listens on `0.0.0.0:8788` (veth only; host publish is `-p 127.0.0.1:8788:8788`). LAN / hotspot host IPs are refused with a non-zero exit. `HOST=0.0.0.0` on the host is refused. There is no `/api/clip` route.
+On the host, `retrans serve` and `scripts/loopback.sh` **must** listen on `127.0.0.1:8788`. `HOST=0.0.0.0` on the host (and any LAN / hotspot / wildcard bind) is refused with a non-zero exit.
+
+Inside a container, infra sets `HOST=0.0.0.0` so `retrans serve` listens on `0.0.0.0:8788` (veth only). Host publish is `-p 127.0.0.1:8788:8788`. Host never binds `0.0.0.0:8788`. There is no `/api/clip` route.
 
 **Sign in** = `PUT /api/live/credentials` or env `RETRANS_X_RTMP_URL` / `RETRANS_X_RTMP_KEY`.  
 **Drop link** = `source_url`. Preview = `GET /api/live/preview?source_url=` (yt-dlp title + `is_live`; no ffmpeg).  

@@ -7,6 +7,12 @@
 set -euo pipefail
 
 if [[ $# -gt 0 ]]; then
+  # docker run --rm --init -p 127.0.0.1:8788:8788 IMAGE retrans serve
+  # Host publish is 127.0.0.1 only. The process must listen on all interfaces
+  # inside the container. Backend must accept HOST=0.0.0.0 in-container.
+  if [[ "$1" == "retrans" && "${2:-}" == "serve" ]]; then
+    export HOST="${HOST:-0.0.0.0}"
+  fi
   exec "$@"
 fi
 
