@@ -107,6 +107,7 @@ class LiveController:
 
     def public_status(self) -> dict[str, Any]:
         with self._lock:
+            self._reconcile_dead_process_locked()
             return {
                 "ok": True,
                 "state": self._state,
@@ -114,8 +115,30 @@ class LiveController:
                 "error": self._error,
             }
 
+    def _reconcile_dead_process_locked(self) -> None:
+        """If status claims live/starting but ffmpeg already exited, flip to error.
+
+        Covers a late wait() thread: GET /api/live/status must not stay live.
+        Operator stop() sets state=stopped first, so it is not treated as error.
+        """
+        if self._state not in {"starting", "live"}:
+            return
+        job = self._job
+        if job is None:
+            return
+        poll = getattr(job, "poll", None)
+        if not callable(poll):
+            return
+        if poll() is None:
+            return
+        self._state = "error"
+        error_fn = getattr(job, "ffmpeg_exit_error", None)
+        message = error_fn() if callable(error_fn) else "ffmpeg restream exited"
+        self._error = message or "ffmpeg restream exited"
+
     def start(self, source_url: str, rtmp_url: str, rtmp_key: str) -> str:
         with self._lock:
+            self._reconcile_dead_process_locked()
             if self.busy:
                 raise AlreadyRunning("already running")
             self._state = "starting"
@@ -158,15 +181,19 @@ class LiveController:
                     job.stop()
                     return
                 self._state = "live"
-            code = job.wait()
+            job.wait()
             with self._lock:
                 if self._state == "stopped":
                     return
-                if code != 0:
+                # Unexpected exit — including zero — is an error. A dead
+                # restream must not look like a clean operator stop.
+                if self._state != "error" or not self._error:
                     self._state = "error"
-                    self._error = "ffmpeg restream exited"
-                else:
-                    self._state = "stopped"
+                    error_fn = getattr(job, "ffmpeg_exit_error", None)
+                    if callable(error_fn):
+                        self._error = error_fn() or "ffmpeg restream exited"
+                    else:
+                        self._error = "ffmpeg restream exited"
         except Exception as exc:  # noqa: BLE001
             with self._lock:
                 if self._state == "stopped":
