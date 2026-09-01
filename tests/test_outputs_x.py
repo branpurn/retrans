@@ -3,6 +3,8 @@ from __future__ import annotations
 import io
 import json
 import queue
+import shutil
+import subprocess
 import threading
 from pathlib import Path
 from urllib.request import Request
@@ -69,6 +71,7 @@ def test_ffmpeg_tee_keeps_playpath_and_encode_lock(tmp_path: Path):
         "https://cdn.example/live.m3u8", dest, preview_m3u8=preview
     )
     assert cmd[0] == "ffmpeg"
+    assert "-map" in cmd and cmd[cmd.index("-map") + 1] == "0"
     assert cmd[cmd.index("-f") + 1] == "tee"
     assert "-use_fifo" in cmd
     spec = cmd[-1]
@@ -110,9 +113,74 @@ def test_restream_start_tees_when_preview_dir(tmp_path: Path):
     cmd = spawned["cmd"]
     dest = join_rtmp_destination("rtmps://va.pscp.tv:443/x", "placeholder-key")
     assert dest == "rtmps://va.pscp.tv:443/x/placeholder-key"
+    assert cmd[cmd.index("-map") + 1] == "0"
     assert cmd[cmd.index("-f") + 1] == "tee"
     assert escape_tee_sink(dest) in cmd[-1]
     assert "index.m3u8" in cmd[-1]
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_ffmpeg_tee_writes_h264_aac_picture_and_sound(tmp_path: Path):
+    """Real encode: same H.264/AAC bytes to FLV sink and HLS fMP4 playlist."""
+    src = tmp_path / "src.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=320x180:rate=30",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=44100",
+            "-t",
+            "1",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            "-shortest",
+            str(src),
+        ],
+        check=True,
+    )
+    dest = tmp_path / "out.flv"
+    preview = tmp_path / "index.m3u8"
+    cmd = build_ffmpeg_restream_cmd(str(src), str(dest), preview_m3u8=str(preview))
+    subprocess.run(cmd, check=True, capture_output=True, text=True)
+    assert preview.is_file()
+    assert dest.is_file()
+    text = preview.read_text(encoding="utf-8")
+    assert "#EXTM3U" in text
+    assert "init.mp4" in text
+    probe = subprocess.run(
+        [
+            "ffprobe",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-show_entries",
+            "stream=codec_name,width,height,codec_type",
+            "-of",
+            "csv=p=0",
+            str(preview),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    out = probe.stdout
+    assert "h264" in out
+    assert "aac" in out
+    assert "1920" in out
+    assert "1080" in out
 
 
 class _FakeProc:

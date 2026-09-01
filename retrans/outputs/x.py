@@ -133,7 +133,8 @@ def build_ffmpeg_restream_cmd(
             f"hls_segment_type=fmp4:hls_fmp4_init_filename=init.mp4]"
             f"{hls_sink}"
         )
-        cmd.extend(["-f", "tee", "-use_fifo", "1", tee_spec])
+        # tee requires an explicit map or ffmpeg reports "does not contain any stream".
+        cmd.extend(["-map", "0", "-f", "tee", "-use_fifo", "1", tee_spec])
         return cmd
     cmd.extend(
         [
