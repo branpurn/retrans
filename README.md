@@ -19,4 +19,22 @@ NOT `--network host`. Not 0.0.0.0. Not Vite 5173. Not a git clone.
 
 Drop a live URL → Retrans. You must have permission or fair use.
 
+## Headless
+
+No UI. No published port. Source URL + stream key. Default ingest `rtmps://va.pscp.tv:443/x` (RTMP URL hidden). Broadcast title is still Media Studio.
+
+`retrans.env` (placeholder only):
+
+```
+RETRANS_X_RTMP_KEY=YOUR_STREAM_KEY
+```
+
+```bash
+docker run --name retrans-live --env-file retrans.env ghcr.io/branpurn/retrans:latest retrans live "$SOURCE_URL"
+```
+
+Optional `--restart unless-stopped` if you want the container to come back after reboot.
+
+You must have permission or fair use.
+
 Developers: [docs/operator.md](docs/operator.md)
