@@ -6,8 +6,9 @@ retransmit YouTube (and other) live streams to X.com as X live. Extensible input
 
 Success is live retrans via Media Studio RTMP + retrans bridge: a live YouTube (or other live) source comes out as X live. Not VOD clips. Not INIT/APPEND/FINALIZE clip posts as the product.
 
-Wave 1 operator UI (Frontend): paste a URL → preview → start/stop retrans to X.
-Permission / fair-use acknowledgment is required before start.
+Wave 1 operator UI: paste a YouTube live URL → preview → Media Studio RTMP destination → permission / fair-use ack → start/stop **LIVE** retrans to X.
+
+Not clip-post. Not VOD. Not file upload. Status language is live only (Idle | Preview | LIVE | Stopped | Error). Never Posted / Clip / Tweet / Upload.
 
 Layout: [design/layout-v1.md](design/layout-v1.md)
 
@@ -70,10 +71,35 @@ retrans serve
 
 Responses **never** echo `rtmp_key` or `rtmp_url`.
 
+## Operator UI (this PR)
+
+Product string **RETRANS**. Code, files, and package: `retrans`. Chrome matches [design/layout-v1.md](design/layout-v1.md).
+
+```bash
+npm install
+npm run dev      # Vite on 127.0.0.1; proxies /api → http://127.0.0.1:8788
+npm run build    # static dist/ for Infra to serve
+npm test
+```
+
+Do not bind or proxy `0.0.0.0`. Vite `server.host` is `127.0.0.1` only.
+
+| Field | Env | Meaning |
+| --- | --- | --- |
+| `source_url` | — | Page URL to restream (YouTube first) |
+| `rtmp_url` | `RETRANS_X_RTMP_URL` | RTMP(S) URL from studio.x.com → Sources → Create Source |
+| `rtmp_key` | `RETRANS_X_RTMP_KEY` | Stream key (password). Never logged, never shown after submit. |
+
+- **Start live retrans** only when: preview ok + `rtmp_url` + `rtmp_key` + fair-use ack + status not LIVE
+- **Stop** only when LIVE
+- Ack copy: `I have permission or fair use to retransmit this live.` (not legal advice)
+- After Start, still Create Broadcast + Go Live in Media Studio
+- No clip routes and no clip UI
+
 ## Debug aid (not the product)
 
 ```bash
 retrans clip 'https://…' --start 00:00:00 --end 00:00:30 -o /tmp/debug.mp4
 ```
 
-Clip cutter is a debug aid, not the product. Clip upload is fail / not default.
+Clip cutter is a debug aid, not the product. Clip upload is fail / not default. Not in the operator GUI.
