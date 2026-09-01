@@ -37,7 +37,7 @@ class ImmediateLive:
         self._started = threading.Event()
         self.rtmp_key = None
 
-    def start(self, source_url, rtmp_url, rtmp_key):
+    def start(self, source_url, rtmp_url, rtmp_key, **_k):
         assert source_url == SOURCE
         self.rtmp_key = rtmp_key
         self._started.set()
@@ -67,6 +67,7 @@ def isolate_store(tmp_path, monkeypatch):
     monkeypatch.delenv("RETRANS_X_RTMP_URL", raising=False)
     monkeypatch.delenv("RETRANS_X_RTMP_KEY", raising=False)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setenv("RETRANS_OUTBOUND_DIR", str(tmp_path / "outbound"))
     return tmp_path / "xdg"
 
 

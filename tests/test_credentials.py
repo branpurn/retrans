@@ -70,6 +70,7 @@ def isolate_store(tmp_path, monkeypatch):
     monkeypatch.delenv(RTMP_URL_ENV, raising=False)
     monkeypatch.delenv(RTMP_KEY_ENV, raising=False)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setenv("RETRANS_OUTBOUND_DIR", str(tmp_path / "outbound"))
     return tmp_path / "xdg"
 
 

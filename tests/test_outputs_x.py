@@ -14,6 +14,7 @@ from retrans.outputs.x import (
     XLiveRestream,
     build_ffmpeg_restream_cmd,
     debug_chunked_upload_and_post,
+    escape_tee_sink,
     format_ffmpeg_exit_error,
     join_rtmp_destination,
 )
@@ -58,6 +59,60 @@ def test_ffmpeg_cmd_is_h264_aac_flv_not_hevc():
     assert "libx265" not in joined
     assert "tee" not in joined.split()
     assert dest in cmd
+
+
+def test_ffmpeg_tee_keeps_playpath_and_encode_lock(tmp_path: Path):
+    dest = join_rtmp_destination("rtmps://va.pscp.tv:443/x", "placeholder-key")
+    assert dest == "rtmps://va.pscp.tv:443/x/placeholder-key"
+    preview = str(tmp_path / "index.m3u8")
+    cmd = build_ffmpeg_restream_cmd(
+        "https://cdn.example/live.m3u8", dest, preview_m3u8=preview
+    )
+    assert cmd[0] == "ffmpeg"
+    assert cmd[cmd.index("-f") + 1] == "tee"
+    assert "-use_fifo" in cmd
+    spec = cmd[-1]
+    assert escape_tee_sink(dest) in spec
+    assert "f=flv" in spec
+    assert "flvflags=no_duration_filesize" in spec
+    assert "f=hls" in spec
+    assert "hls_segment_type=fmp4" in spec
+    assert escape_tee_sink(preview) in spec
+    assert cmd[cmd.index("-c:v") + 1] == "libx264"
+    assert cmd[cmd.index("-b:v") + 1] == "9M"
+    assert cmd[cmd.index("-r") + 1] == "30"
+    assert cmd[cmd.index("-b:a") + 1] == "128k"
+    vf = cmd[cmd.index("-vf") + 1]
+    assert "1920:1080" in vf
+    joined = " ".join(cmd)
+    assert "hevc" not in joined.lower()
+    assert "libx265" not in joined
+
+
+def test_restream_start_tees_when_preview_dir(tmp_path: Path):
+    spawned = {}
+
+    class Resolver:
+        def resolve(self, page_url: str) -> str:
+            return "https://cdn.example/live.m3u8"
+
+    def popen(cmd, **_kwargs):
+        spawned["cmd"] = cmd
+        return _FakeProc(code=None)
+
+    job = XLiveRestream(resolver=Resolver(), popen=popen)
+    job.start(
+        "https://www.youtube.com/watch?v=abc",
+        "rtmps://va.pscp.tv:443/x",
+        "placeholder-key",
+        preview_dir=str(tmp_path),
+    )
+    cmd = spawned["cmd"]
+    dest = join_rtmp_destination("rtmps://va.pscp.tv:443/x", "placeholder-key")
+    assert dest == "rtmps://va.pscp.tv:443/x/placeholder-key"
+    assert cmd[cmd.index("-f") + 1] == "tee"
+    assert escape_tee_sink(dest) in cmd[-1]
+    assert "index.m3u8" in cmd[-1]
 
 
 class _FakeProc:
