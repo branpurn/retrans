@@ -78,17 +78,33 @@ Shown when `GET /api/live/credentials` → `{ configured: false }` (or first vis
 
 | Element | Rule |
 | --- | --- |
-| Title | `Sign in` |
-| Helper (one short line) | `Save Media Studio RTMP once. Not X OAuth.` |
+| Title | `Sign in` — clickable `?` next to this title (same beat) |
+| Helper (one short line) | `Save Media Studio RTMP once. Not X OAuth.` — default visible helper |
 | Field | RTMP URL — `type="text"` |
 | Field | Stream key — `type="password"` |
 | Primary | **Save** |
 
 - Save calls `PUT /api/live/credentials` with `{ rtmp_url, rtmp_key }` only.
 - On success → Beat 2. Clear the fields from the DOM. **Never show secrets again after save.**
+- Stream key stays `type="password"`. After Save, the key is **never shown again** (fields cleared from the DOM). `GET /api/live/credentials` returns `{ configured }` only — never echo `rtmp_url` or `rtmp_key`.
 - If `configured: true` at boot, skip this beat.
-- No Media Studio walkthrough, no Create Broadcast maze, no extra helpers beyond that one line.
-- Not X OAuth. No “Sign in with X” button.
+- Sign-in is a one-time Media Studio RTMP save. Not X OAuth. No “Sign in with X” button.
+
+### Sign in `?` help (same beat)
+
+Clickable `?` next to the **Sign in** title. Show/hide short help on this beat (disclosure / inline panel). Stays inside the 480px one-beat console. No new route. No modal maze. No OAuth screen. Not a settings maze. Not a fifth block.
+
+Default visible helper stays the one line: `Save Media Studio RTMP once. Not X OAuth.` The `?` does not replace that line.
+
+Help copy — short steps only (exact path names):
+
+1. Open studio.x.com (Creator / Media Studio Producer)
+2. Sources → Create Source (RTMP)
+3. Copy RTMP(S) URL + stream key into the two Sign in fields
+
+Also one short line in that help (not a Broadcast UI): **Broadcasts → Create Broadcast** + **Go Live** still happen on X after Retrans starts. That is not this beat. Do not add Broadcast UI here.
+
+No extra Media Studio maze beyond this `?` disclosure. No settings page. No “Sign in with X”.
 
 ## Beat 2 — Drop link
 
@@ -217,8 +233,8 @@ Reuse [layout-v1.md](layout-v1.md) `:root` tokens:
 
 ## Out of primary
 
-No settings pages. No multi-dest. No clip-post. No clip download. No schedule. No OAuth screens. No maze of Media Studio helpers beyond the one short line on Beat 1. No five-block 720px chrome.
+No settings pages. No multi-dest. No clip-post. No clip download. No schedule. No OAuth screens. No Media Studio maze beyond the Beat 1 `?` disclosure (same-beat inline help; default helper stays the one short line). No five-block 720px chrome.
 
 ## Done when
 
-Frontend can ship the three beats against this file without inventing chrome, OAuth, or clip UI.
+Frontend can ship the three beats against this file without inventing chrome, OAuth, or clip UI. Beat 1 `?` help is the only Media Studio walkthrough — same beat, not a new page.
