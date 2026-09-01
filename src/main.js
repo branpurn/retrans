@@ -7,6 +7,7 @@ import {
   isUsableStatus,
   pillFor,
   pillLabel,
+  transportHelper,
 } from "./enablement.js";
 import { retransApi } from "./retransApi.js";
 
@@ -93,13 +94,10 @@ function render() {
   });
   els.stopBtn.disabled = !canStop({ state: state.backend });
 
-  if (state.backend === "live") {
-    els.helper.textContent = "Retransmitting live to X";
-  } else if (state.backend === "error" && state.error) {
-    els.helper.textContent = redact(state.error);
-  } else {
-    els.helper.textContent = "Idle until preview + destination + ack";
-  }
+  els.helper.textContent = transportHelper({
+    backend: state.backend,
+    error: state.error ? redact(state.error) : "",
+  });
 }
 
 function runPreview() {

@@ -12,7 +12,8 @@ const START = "/api/live/start";
 const STOP = "/api/live/stop";
 const STATUS = "/api/live/status";
 
-function redactSecrets(text, secrets) {
+/** Redact rtmp_url / rtmp_key substrings only; leave NotLiveError text otherwise unchanged. */
+export function redactSecrets(text, secrets = []) {
   let out = String(text ?? "");
   for (const secret of secrets) {
     const value = String(secret ?? "");
