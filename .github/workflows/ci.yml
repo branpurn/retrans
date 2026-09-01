@@ -25,6 +25,13 @@ jobs:
           ! docker compose --profile live config | grep -E 'ports:|8788:8788|0\.0\.0\.0'
           # No container_name — concurrent keyed workers stay allowed.
           ! docker compose --profile live config | grep -F 'container_name:'
+          # Headless is an alias on the same no-ports worker. Not a restart-policy lock.
+          docker compose --profile headless config
+          docker compose --profile headless config | grep -F 'ghcr.io/branpurn/retrans'
+          ! docker compose --profile headless config | grep -E 'ports:|8788:8788|0\.0\.0\.0'
+          ! docker compose --profile headless config | grep -F 'container_name:'
+          test "$(docker compose --profile live config --services)" = "$(docker compose --profile headless config --services)"
+          ! docker compose --profile loopback config --services | grep -qx retrans
       - name: Compose loopback profile
         run: |
           docker compose --profile loopback config
@@ -48,6 +55,7 @@ jobs:
           grep -F 'docker run --rm --init -p 127.0.0.1:8788:8788' README.md
           grep -F 'docker run --rm --init -p 127.0.0.1:8788:8788' docker-compose.yml
           ! grep -E 'docker run .*--network[[:space:]]+host' README.md docker-compose.yml
+          grep -F 'docker run --init --env-file .env --name retrans-headless' docker-compose.yml
           grep -F 'docker run --rm --init -p 127.0.0.1:8788:8788' .github/workflows/release.yml
           ! grep -F 'network_mode: host' .github/workflows/release.yml
           grep -F 'HOST="${HOST:-0.0.0.0}"' docker-entrypoint.sh
