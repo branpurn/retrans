@@ -38,7 +38,7 @@ Without Docker (`pip install -e .` and `npm install` first):
 ./scripts/loopback.sh
 ```
 
-CI checks that `HOST=0.0.0.0 ./scripts/loopback.sh` is refused (non-zero; no bind).
+CI checks that `HOST=0.0.0.0 ./scripts/loopback.sh` is refused (non-zero; no bind). Both paths fail-hard if `retrans serve` is not listening on `127.0.0.1:8788`; the UI is not started until that loopback probe succeeds.
 
 Then open the Vite URL (typically `http://127.0.0.1:5173`). Control API: `http://127.0.0.1:8788`. Default `docker compose up` remains the live ffmpeg worker (no host port).
 

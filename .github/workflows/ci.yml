@@ -75,3 +75,7 @@ jobs:
           printf '%s\n' "$output"
           printf '%s\n' "$output" | grep -Eivq 'refusing HOST'
           printf '%s\n' "$output" | grep -Eiq 'retrans not on PATH|npm not on PATH'
+      - name: Script probes 127.0.0.1:8788 before UI
+        run: |
+          grep -F '127.0.0.1:8788' scripts/loopback.sh
+          grep -E 'api/live/status|/dev/tcp' scripts/loopback.sh
