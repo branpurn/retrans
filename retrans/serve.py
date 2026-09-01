@@ -1,8 +1,9 @@
 """Loopback-only HTTP control API for the live restream path.
 
 Bind is locked to 127.0.0.1:8788. HOST=0.0.0.0 (and any non-loopback /
-LAN / hotspot address) is refused with a non-zero exit. Responses never
-echo rtmp_url or rtmp_key. There is no /api/clip route.
+LAN / hotspot address) is refused with a non-zero exit. When Vite dist/
+is present, GET / and assets are served from that directory (same origin
+as /api). Responses never echo rtmp_url or rtmp_key. There is no /api/clip route.
 
 Sign in: PUT /api/live/credentials (or env). Drop link: source_url.
 Preview: GET /api/live/preview?source_url= (yt-dlp -J title + is_live; no ffmpeg).
@@ -13,14 +14,16 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import mimetypes
 import os
 import socket
 import socketserver
 import threading
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse, urlsplit
+from urllib.parse import parse_qs, unquote, urlparse, urlsplit
 
 from retrans.config import DEFAULT_PORT, HOST_ENV, LOOPBACK_HOST, PORT_ENV, redact
 from retrans.credentials import (
@@ -36,6 +39,7 @@ from retrans.sources.youtube import is_youtube_url
 MAX_BODY = 64 * 1024
 VALID_STATES = ("idle", "starting", "live", "error", "stopped")
 CORS_METHODS = "GET, PUT, POST, DELETE, OPTIONS"
+DIST_ENV = "RETRANS_DIST"
 NOT_CONFIGURED = (
     "RTMP credentials are not configured. "
     "PUT /api/live/credentials or set RETRANS_X_RTMP_URL and RETRANS_X_RTMP_KEY."
@@ -103,6 +107,52 @@ def ensure_loopback_bind(host: str, port: int) -> None:
                 f"refusing to bind {host} ({ip}); retrans serve is loopback-only "
                 f"({LOOPBACK_HOST}:{DEFAULT_PORT})"
             )
+
+
+def resolve_dist_dir(explicit: str | None = None) -> Path | None:
+    """Locate Vite dist/ (index.html + assets) for same-origin operator UI.
+
+    RETRANS_DIST (or explicit) is exclusive when set: a miss does not fall
+    through to cwd / package-adjacent dist/.
+    """
+    raw = explicit if explicit is not None else os.environ.get(DIST_ENV, "")
+    if isinstance(raw, str) and raw.strip():
+        try:
+            resolved = Path(raw.strip()).resolve()
+        except OSError:
+            return None
+        if resolved.is_dir() and (resolved / "index.html").is_file():
+            return resolved
+        return None
+    for cand in (Path.cwd() / "dist", Path(__file__).resolve().parent.parent / "dist"):
+        try:
+            resolved = cand.resolve()
+        except OSError:
+            continue
+        if resolved.is_dir() and (resolved / "index.html").is_file():
+            return resolved
+    return None
+
+
+def safe_dist_file(dist: Path, url_path: str) -> Path | None:
+    """Map a URL path onto a file under dist/. Reject traversal."""
+    rel = unquote(url_path or "")
+    if rel.startswith("/"):
+        rel = rel[1:]
+    if not rel or rel.endswith("/"):
+        rel = f"{rel}index.html" if rel else "index.html"
+    parts = Path(rel).parts
+    if ".." in parts:
+        return None
+    try:
+        root = dist.resolve()
+        target = (root / rel).resolve()
+        target.relative_to(root)
+    except (OSError, ValueError):
+        return None
+    if target.is_file():
+        return target
+    return None
 
 
 class LiveController:
@@ -367,6 +417,26 @@ def make_handler(
             self.end_headers()
             self.wfile.write(body)
 
+        def _send_static(self, url_path: str) -> bool:
+            dist = resolve_dist_dir()
+            if dist is None:
+                return False
+            file_path = safe_dist_file(dist, url_path)
+            if file_path is None:
+                return False
+            data = file_path.read_bytes()
+            ctype, _enc = mimetypes.guess_type(str(file_path))
+            self.send_response(200)
+            self.send_header("Content-Type", ctype or "application/octet-stream")
+            self.send_header("Content-Length", str(len(data)))
+            origin = _cors_origin(self)
+            if origin:
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
+            self.end_headers()
+            self.wfile.write(data)
+            return True
+
         def _read_json(self) -> tuple[Any, str | None]:
             length = int(self.headers.get("Content-Length") or 0)
             if length > MAX_BODY:
@@ -395,10 +465,15 @@ def make_handler(
             if path == "/api/live/preview":
                 self._preview()
                 return
-            if path != "/api/live/status":
+            if path == "/api/live/status":
+                self._send(200, controller.public_status())
+                return
+            if path.startswith("/api/"):
                 self._send(404, {"ok": False, "error": "not found"})
                 return
-            self._send(200, controller.public_status())
+            if self._send_static(path):
+                return
+            self._send(404, {"ok": False, "error": "not found"})
 
         def _preview(self) -> None:
             """Drop-link preview: yt-dlp -J title + is_live. No ffmpeg / restream."""
