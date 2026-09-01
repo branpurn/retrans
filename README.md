@@ -14,6 +14,10 @@ Layout: [design/layout-v1.md](design/layout-v1.md)
 
 - [Permission / fair use](docs/permission-fair-use.md)
 - [X API notes](docs/x-api-notes.md)
+- [Wave 1 test plan](docs/test-plan-wave1.md) — operator plan for live YouTube → operator RTMP. Plan only; not a live PASS. Live clicks wait for a Backend live-path SHA.
+- [Permissions and fair use (QA)](docs/permissions-and-fair-use.md) — rights, fair-use limits, and go-live confirmation.
+
+Wave 1 path: **live source URL → continuous live restream** to the operator’s RTMP endpoint (X Media Studio). Success is an on-air live at that destination — not a clip or VOD post.
 
 There is **no public X API** to create a live broadcast or mint an RTMP key. Sending RTMP alone is **not** enough — the operator must create a source, create a broadcast, and click **Go Live** in Media Studio ([Restream](https://restream.io/learn/platforms/how-to-find-x-stream-key/), [Castr](https://docs.castr.com/en/articles/5119218-how-to-stream-live-video-to-x-formerly-twitter-using-castr), [vMix](https://www.vmix.com/knowledgebase/article.aspx/373/stream-to-x-using-custom-rtmp)).
 
