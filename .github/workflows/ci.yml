@@ -46,6 +46,10 @@ jobs:
           ! grep -E '^[[:space:]]*pull_request:' .github/workflows/release.yml
           extra="$(grep -oE 'secrets\.[A-Z0-9_]+' .github/workflows/release.yml | grep -v GITHUB_TOKEN || true)"
           test -z "$extra"
+          ! grep -E '^[[:space:]]*continue-on-error:' .github/workflows/release.yml
+          grep -F 'https://ghcr.io/v2/branpurn/retrans/manifests' .github/workflows/release.yml
+          grep -F 'must be set Public in package settings' .github/workflows/release.yml
+          grep -F 'env -u GITHUB_TOKEN' .github/workflows/release.yml
       - name: Live tools (ffmpeg, yt-dlp, streamlink) and dist/
         run: |
           docker run --rm --entrypoint bash retrans:ci -c '
