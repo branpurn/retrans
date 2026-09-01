@@ -34,7 +34,7 @@ Sign-in is **not** X OAuth. Sign-in is a one-time Media Studio RTMP save.
 ### Status rules (from layout-v1 Error chrome)
 
 - **Idle-on-poll-fail.** Boot `GET /api/live/status` failure and mid-session status poll / network failures MUST keep the current pill (fresh load = Idle). Never flip the pill to Error for a failed status poll. Never invent helper text like `status failed`.
-- **Error pill** only after a real start failure (HTTP 400 or equivalent) or a usable status payload (`GET /api/live/status` HTTP 200) with nonempty `status.error` / `state === "error"`. Idle + `error: null` (or empty) stays Idle / Preview. Never invent Error from a poll fail.
+- **Error pill** only after a real start failure (HTTP 400 or equivalent) or a usable status payload (`GET /api/live/status` HTTP 200) with nonempty `status.error` / `state === "error"`. Idle + `error: null` (or empty) stays Idle / Preview. Never invent Error from a poll fail. **Not** from `GET /api/live/preview` 502 / probe fail (Drop-link helper only; see Beat 2).
 - **Error sticks until Stop.** After the UI enters Error (start HTTP 400 / equivalent, or usable status with nonempty `status.error` / `state === "error"`), keep the pill Error and the error helper until the operator presses **Stop**. Do **not** auto-flip Error → Idle / Preview / Stopped when a later successful status poll returns `idle` / empty error / no longer `error` (the ~5s auto-clear bug).
 - **Stop clears Error.** `POST /api/live/stop` (or Stop click) is the dismiss path from Error. After Stop succeeds, normal status mapping resumes (Idle / Stopped per existing locks).
 - **Stop enablement.** Stop is enabled while LIVE **or** while Error (so Error can be cleared).
@@ -107,20 +107,28 @@ Preview card fields:
 | Field | Rule |
 | --- | --- |
 | Thumbnail | Show when available |
-| Title | Real `title` from `GET /api/live/preview` when present. Never invent a synthetic `YouTube source <id>` placeholder. Never invent clip/VOD marketing copy. If `title` is empty, leave empty or show host-only. |
+| Title | Real `title` from `GET /api/live/preview` when present on **200 ok**. Never invent a synthetic `YouTube source <id>` placeholder. Never invent clip/VOD marketing copy. If `title` is empty **on 200 ok**, leave empty or show host-only. Do not use this empty-title rule for 502 / probe fail. |
 | Host | Host from the source URL when available |
-| LIVE badge | Existing `.live-badge` chrome / `--live` token. Show **iff** `is_live === true`. |
+| LIVE badge | Existing `.live-badge` chrome / `--live` token. Show **iff** `is_live === true` on **200 ok**. Never from a failed preview. |
 
-When the source is **actually live** (`is_live === true`):
+When the source is **actually live** (`GET /api/live/preview` **200 ok** and `is_live === true`):
 
 - Show the **LIVE** badge on the preview card.
 - Show the **real source title** from the preview payload (`title`). Not a synthetic `YouTube source <id>` placeholder.
 
-When the source is **VOD / not live** (`is_live` is not `true`):
+When the source is **VOD / not live** (`GET /api/live/preview` **200 ok** and `is_live` is `false`):
 
 - **No LIVE badge** (QA expected that).
-- Still show the preview card with thumbnail + title/host when available.
+- Still show the preview card with thumbnail + title/host when available (card ok; preview ok for Continue gating).
 - Continue/Start stay gated by preview-ok rules already in this file (live-first product: non-live may fail Start with API error — do not add clip UI).
+
+When `GET /api/live/preview` returns **502** `{ ok: false, error: "…" }` (yt-dlp fail / probe fail / off-air — same route as the Live API table; not a second preview path) or an equivalent non-OK probe fail from that endpoint:
+
+- **Error helper** on Drop link: show the API `error` string **as-is** (redact rtmp secrets only). Do not invent copy like `status failed` or clip/VOD marketing.
+- **No empty title card.** Do **not** show the preview card with blank title / empty chrome. Hide the preview card (preview not-ok). This is not the 200-ok empty-`title` case above.
+- **No fake LIVE badge.** Never show LIVE from a failed preview.
+- **Continue stays disabled** (preview not-ok).
+- **Top-bar pill:** do **not** flip the status pill to Error solely from preview 502. Stay Idle (or the prior non-Error Drop-link pill). Transport Error pill / Error-sticks-until-Stop remains for start/status Error only — do not conflate preview probe fail with that.
 
 Enable Continue only when **all** are true:
 
@@ -172,10 +180,10 @@ Localhost only. Vite proxies `/api` → `http://127.0.0.1:8788`. Never `0.0.0.0`
 | --- | --- | --- |
 | `PUT` | `/api/live/credentials` | `{ "rtmp_url":"…", "rtmp_key":"…" }` → `200` success. Never echo secrets. |
 | `GET` | `/api/live/credentials` | `200 { "configured": true \| false }` **only**. Never echo `rtmp_url` or `rtmp_key`. |
-| `GET` | `/api/live/preview` | Query `source_url`. `200 { "ok": true, "source_url": "…", "title": "…", "is_live": true \| false }`. Title from yt-dlp `-J` `title` (may be `""` if unknown). `is_live` true when `live_status` is `is_live` or JSON `is_live` is true. Confirmed `not_live` / `was_live` stay `200` + title + `is_live:false`. YouTube first. `400 { "ok": false, "error": "…" }` missing/invalid URL. `502 { "ok": false, "error": "…" }` when yt-dlp fails (not `200` empty/false). No ffmpeg / restream. Never `rtmp_url` / `rtmp_key` / `destination`. |
+| `GET` | `/api/live/preview` | Query `source_url`. `200 { "ok": true, "source_url": "…", "title": "…", "is_live": true \| false }`. Title from yt-dlp `-J` `title` (may be `""` if unknown). `is_live` true when `live_status` is `is_live` or JSON `is_live` is true. Confirmed `not_live` / `was_live` stay `200` + title + `is_live:false`. YouTube first. `400 { "ok": false, "error": "…" }` missing/invalid URL. `502 { "ok": false, "error": "…" }` when yt-dlp fails (not `200` empty/false). Drop-link chrome for that 502: Beat 2 Preview (hide card; `error` as-is; Continue disabled; pill stays Idle — not Transport Error). No ffmpeg / restream. Never `rtmp_url` / `rtmp_key` / `destination`. |
 | `POST` | `/api/live/start` | `{ "source_url":"…" }` **only** → `200 { "ok": true, "state": "starting" }` (process up → later status `live`). `400` missing/invalid / not a live stream. `409` already running. |
 | `POST` | `/api/live/stop` | existing live API — `200 { "ok": true, "state": "stopped" }` (also `200`/`ok` if already idle) |
-| `GET` | `/api/live/preview` | Query `source_url`. `127.0.0.1:8788`. Response `{ "ok", "source_url", "title", "is_live" }` **only**. No `rtmp_url` / `rtmp_key`. Never echo secrets. **LIVE** badge iff `is_live === true`. Show real `title` (not a synthetic `YouTube source <id>` placeholder). |
+| `GET` | `/api/live/preview` | Query `source_url`. `127.0.0.1:8788`. Response `{ "ok", "source_url", "title", "is_live" }` **only**. No `rtmp_url` / `rtmp_key`. Never echo secrets. **LIVE** badge iff `is_live === true` on 200 ok. Show real `title` (not a synthetic `YouTube source <id>` placeholder). Same-route **502** `{ ok: false, error }` chrome: Beat 2 Preview (hide card; no LIVE badge; `error` as-is; Continue disabled; pill stays Idle). |
 | `GET` | `/api/live/status` | existing live API — `200 { "ok": true, "state": "idle"\|"starting"\|"live"\|"error"\|"stopped", "source_url": "…" or null, "error": null or string }` |
 
 Responses **never** echo `rtmp_key` or `rtmp_url`. Redact those substrings in any error string shown in the UI.
