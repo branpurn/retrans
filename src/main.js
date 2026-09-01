@@ -1,6 +1,6 @@
 import "./style.css";
 import { parseSourceUrl } from "./sourceUrl.js";
-import { canStart, canStop, pillFor, pillLabel } from "./enablement.js";
+import { backendFromResult, canStart, canStop, pillFor, pillLabel } from "./enablement.js";
 import { retransApi } from "./retransApi.js";
 
 const els = {
@@ -136,8 +136,8 @@ function invalidatePreviewIfSourceChanged() {
 
 function applyBackend(result) {
   if (!result) return;
-  state.backend = result.state || "error";
-  state.error = result.error || "";
+  state.backend = backendFromResult(result);
+  state.error = typeof result.error === "string" ? result.error : "";
   if (result.source_url && !state.previewOk) {
     els.source.value = result.source_url;
     applyPreview(parseSourceUrl(result.source_url));
