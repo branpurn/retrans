@@ -22,6 +22,10 @@ _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _lock = threading.Lock()
 
 
+class DuplicateKeyNameError(ValueError):
+    """Name already used by a different key id. Maps to HTTP 409."""
+
+
 def keys_path() -> Path:
     xdg = (os.environ.get("XDG_CONFIG_HOME") or "").strip()
     root = Path(xdg) if xdg else Path.home() / ".config"
@@ -157,6 +161,9 @@ def upsert_key(
     }
     with _lock:
         records = _read_records(path)
+        for existing in records:
+            if existing["name"] == clean_name and existing["id"] != new_id:
+                raise DuplicateKeyNameError("name already exists")
         replaced = False
         for i, existing in enumerate(records):
             if existing["id"] == new_id:

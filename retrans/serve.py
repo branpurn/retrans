@@ -45,6 +45,7 @@ from retrans.credentials import (
     save_credentials,
 )
 from retrans.keys import (
+    DuplicateKeyNameError,
     delete_key,
     get_key,
     list_keys_public,
@@ -968,12 +969,16 @@ def make_handler(
             if isinstance(parsed, str):
                 self._send(400, {"ok": False, "error": parsed})
                 return
-            public = upsert_key(
-                name=parsed["name"],
-                rtmp_key=parsed["rtmp_key"],
-                key_id=parsed.get("id"),
-                rtmp_url=parsed.get("rtmp_url"),
-            )
+            try:
+                public = upsert_key(
+                    name=parsed["name"],
+                    rtmp_key=parsed["rtmp_key"],
+                    key_id=parsed.get("id"),
+                    rtmp_url=parsed.get("rtmp_url"),
+                )
+            except DuplicateKeyNameError as exc:
+                self._send(409, {"ok": False, "error": str(exc)})
+                return
             self._send(200, {"ok": True, **public})
 
         def do_DELETE(self) -> None:

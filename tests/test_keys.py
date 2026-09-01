@@ -17,6 +17,7 @@ from retrans.config import LOOPBACK_HOST
 from retrans.ingest import NotLiveError
 from retrans.keys import (
     DEFAULT_RTMP_URL,
+    DuplicateKeyNameError,
     delete_key,
     get_key,
     keys_path,
@@ -390,3 +391,100 @@ def test_delete_key_module(isolate_store):
     assert delete_key("studio-a") is True
     assert get_key("studio-a") is None
     assert delete_key("studio-a") is False
+
+
+def test_upsert_rejects_duplicate_name_unless_same_id(isolate_store):
+    first = upsert_key(name="qa-alpha", rtmp_key=PLACEHOLDER_KEY_A, key_id="key-a")
+    assert first["name"] == "qa-alpha"
+    with pytest.raises(DuplicateKeyNameError, match="name already exists"):
+        upsert_key(name="qa-alpha", rtmp_key=PLACEHOLDER_KEY_B)
+    with pytest.raises(DuplicateKeyNameError, match="name already exists"):
+        upsert_key(name="qa-alpha", rtmp_key=PLACEHOLDER_KEY_B, key_id="key-b")
+    same = upsert_key(name="qa-alpha", rtmp_key=PLACEHOLDER_KEY_B, key_id="key-a")
+    assert same == {"id": "key-a", "name": "qa-alpha", "configured": True}
+    assert get_key("key-a")["rtmp_key"] == PLACEHOLDER_KEY_B
+    other = upsert_key(name="QA-alpha", rtmp_key=PLACEHOLDER_KEY_B, key_id="key-b")
+    assert other["name"] == "QA-alpha"
+    renamed = upsert_key(name="qa-beta", rtmp_key=PLACEHOLDER_KEY_A, key_id="key-a")
+    assert renamed["name"] == "qa-beta"
+    listed = list_keys_public()
+    names = {row["id"]: row["name"] for row in listed}
+    assert names == {"key-a": "qa-beta", "key-b": "QA-alpha"}
+
+
+def test_put_duplicate_name_409_unless_same_id(api_factory):
+    port = api_factory(LiveController(restream_factory=ImmediateLive))
+    status, data, raw = _req(
+        port,
+        "PUT",
+        "/api/live/keys",
+        {"id": "key-a", "name": "qa-alpha", "rtmp_key": PLACEHOLDER_KEY_A},
+    )
+    assert status == 200
+    assert data == {"ok": True, "id": "key-a", "name": "qa-alpha", "configured": True}
+    _assert_no_secrets(data, raw)
+
+    status, data, raw = _req(
+        port,
+        "PUT",
+        "/api/live/keys",
+        {"name": "qa-alpha", "rtmp_key": PLACEHOLDER_KEY_B},
+    )
+    assert status == 409
+    assert data["ok"] is False
+    assert data["error"] == "name already exists"
+    _assert_no_secrets(data, raw)
+
+    status, data, raw = _req(
+        port,
+        "PUT",
+        "/api/live/keys",
+        {"id": "key-b", "name": "qa-alpha", "rtmp_key": PLACEHOLDER_KEY_B},
+    )
+    assert status == 409
+    assert data["ok"] is False
+    assert data["error"] == "name already exists"
+    _assert_no_secrets(data, raw)
+
+    status, data, raw = _req(
+        port,
+        "PUT",
+        "/api/live/keys",
+        {"id": "key-a", "name": "qa-alpha", "rtmp_key": PLACEHOLDER_KEY_B},
+    )
+    assert status == 200
+    assert data == {"ok": True, "id": "key-a", "name": "qa-alpha", "configured": True}
+    _assert_no_secrets(data, raw)
+
+    status, data, raw = _req(
+        port,
+        "PUT",
+        "/api/live/keys",
+        {"id": "key-b", "name": "QA-alpha", "rtmp_key": PLACEHOLDER_KEY_B},
+    )
+    assert status == 200
+    assert data["id"] == "key-b"
+    assert data["name"] == "QA-alpha"
+    _assert_no_secrets(data, raw)
+
+    status, data, raw = _req(
+        port,
+        "PUT",
+        "/api/live/keys",
+        {"id": "key-a", "name": "QA-alpha", "rtmp_key": PLACEHOLDER_KEY_A},
+    )
+    assert status == 409
+    assert data["ok"] is False
+    assert data["error"] == "name already exists"
+    _assert_no_secrets(data, raw)
+
+    status, data, raw = _req(port, "GET", "/api/live/keys")
+    assert status == 200
+    assert data == {
+        "ok": True,
+        "keys": [
+            {"id": "key-a", "name": "qa-alpha", "configured": True},
+            {"id": "key-b", "name": "QA-alpha", "configured": True},
+        ],
+    }
+    _assert_no_secrets(data, raw)
