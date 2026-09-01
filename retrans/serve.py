@@ -1,9 +1,18 @@
-"""Loopback-only HTTP control API for the live restream path.
+"""HTTP control API for the live restream path.
 
-Bind is locked to 127.0.0.1:8788. HOST=0.0.0.0 (and any non-loopback /
-LAN / hotspot address) is refused with a non-zero exit. When Vite dist/
-is present, GET / and assets are served from that directory (same origin
-as /api). Responses never echo rtmp_url or rtmp_key. There is no /api/clip route.
+On the host, bind is 127.0.0.1:8788 only. Never 0.0.0.0 / LAN / hotspot
+on the host. Inside a container (/.dockerenv or containerenv), listen on
+0.0.0.0:8788 so Infra `-p 127.0.0.1:8788:8788` reaches the process via
+the container veth — that is not a host LAN publish. Operator URL stays
+http://127.0.0.1:8788. LAN/hotspot host IPs are always refused.
+
+    docker rm -f retrans
+    docker pull ghcr.io/branpurn/retrans:latest
+    docker run --rm --init -p 127.0.0.1:8788:8788 IMAGE retrans serve
+
+When Vite dist/ is present, GET / and assets are served from that
+directory (same origin as /api). Responses never echo rtmp_url or
+rtmp_key. There is no /api/clip route.
 
 Named keys: GET/PUT /api/live/keys, DELETE /api/live/keys/<id> (0600 local file).
 Retrans: POST /api/live/start {source_url, key_id} — concurrent workers; 409 per key_id.
@@ -56,37 +65,65 @@ NOT_CONFIGURED = (
 
 
 class BindRefused(RuntimeError):
-    """Serve would bind off-loopback. Exit non-zero; do not listen."""
+    """Serve would bind a refused address. Exit non-zero; do not listen."""
+
+
+_CONTAINER_MARKERS = (
+    Path("/.dockerenv"),
+    Path("/run/.containerenv"),
+    Path("/.containerenv"),
+)
+CONTAINER_BIND_HOST = "0.0.0.0"
+_WILDCARD_HOSTS = {
+    "0.0.0.0",
+    "::",
+    "*",
+    "0",
+    "::0",
+    "0:0:0:0:0:0:0:0",
+}
+
+
+def running_in_container() -> bool:
+    """True inside Docker / OCI so serve can listen on the container veth."""
+    return any(marker.exists() for marker in _CONTAINER_MARKERS)
 
 
 class AlreadyRunning(RuntimeError):
     """A live restream is already starting or live."""
 
 
+def _is_lan_or_hotspot_ip(raw: str) -> bool:
+    """True for a concrete host IP that is not loopback (192.168/10/172.16…)."""
+    try:
+        ip = ipaddress.ip_address(raw.lower().strip("[]"))
+    except ValueError:
+        return False
+    return bool(not ip.is_loopback and not ip.is_unspecified)
+
+
 def normalize_bind_host(host: str | None) -> str:
-    """Accept only 127.0.0.1 / localhost. Refuse 0.0.0.0 and LAN/hotspot."""
+    """Host: 127.0.0.1 only. Container: 0.0.0.0 (veth). Always refuse LAN."""
     if host is None:
-        raw = os.environ.get(HOST_ENV, LOOPBACK_HOST)
+        raw = os.environ.get(HOST_ENV, "")
     else:
         raw = host
     raw = (raw or "").strip()
-    if not raw:
-        raw = LOOPBACK_HOST
-    lowered = raw.lower().strip("[]")
-    refused = {
-        "0.0.0.0",
-        "::",
-        "*",
-        "0",
-        "::0",
-        "0:0:0:0:0:0:0:0",
-    }
-    if lowered in refused:
+    lowered = raw.lower().strip("[]") if raw else ""
+    if lowered and _is_lan_or_hotspot_ip(lowered):
         raise BindRefused(
             f"refusing to bind HOST={raw}; retrans serve is loopback-only "
             f"({LOOPBACK_HOST}:{DEFAULT_PORT})"
         )
-    if lowered in {LOOPBACK_HOST, "localhost"}:
+    if running_in_container():
+        # Container veth only. Host publish stays -p 127.0.0.1:8788:8788.
+        if not lowered or lowered in {LOOPBACK_HOST, "localhost"} | _WILDCARD_HOSTS:
+            return CONTAINER_BIND_HOST
+        raise BindRefused(
+            f"refusing to bind HOST={raw}; retrans serve is loopback-only "
+            f"({LOOPBACK_HOST}:{DEFAULT_PORT})"
+        )
+    if not lowered or lowered in {LOOPBACK_HOST, "localhost"}:
         return LOOPBACK_HOST
     raise BindRefused(
         f"refusing to bind HOST={raw}; retrans serve is loopback-only "
@@ -104,7 +141,12 @@ def resolve_bind_port(port: int | None) -> int:
 
 
 def ensure_loopback_bind(host: str, port: int) -> None:
-    """Fail closed if getaddrinfo would yield a non-loopback address."""
+    """Fail closed if a host bind would yield a non-loopback address.
+
+    Container 0.0.0.0 is the veth only (published as 127.0.0.1:8788:8788).
+    """
+    if running_in_container() and host == CONTAINER_BIND_HOST:
+        return
     try:
         infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     except socket.gaierror as exc:

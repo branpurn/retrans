@@ -64,12 +64,12 @@ def _parser() -> argparse.ArgumentParser:
 
     serve = sub.add_parser(
         "serve",
-        help="Loopback HTTP control API for the live path (127.0.0.1:8788)",
+        help="HTTP control API (operator URL http://127.0.0.1:8788)",
     )
     serve.add_argument(
         "--host",
         default=None,
-        help="Bind host (loopback only; HOST=0.0.0.0 is refused)",
+        help="Bind host (host: 127.0.0.1 only; container: 0.0.0.0; LAN refused)",
     )
     serve.add_argument(
         "--port",

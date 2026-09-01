@@ -25,20 +25,21 @@ There is **no public X API** to create a live broadcast or mint an RTMP key. Sen
 
 Operator image: **`ghcr.io/branpurn/retrans`** (Vite `dist/` + ffmpeg + yt-dlp + streamlink + `retrans serve`). Secrets via `.env` / env vars only (copy `.env.example`; never commit `.env`).
 
-## Operator (GHCR + one compose)
+## Operator (GHCR)
 
-Pull a tagged image and run one compose. **Operator URL:** `http://127.0.0.1:8788` **only**.
+**Operator URL:** `http://127.0.0.1:8788` **only**.
 
 ```bash
-docker pull ghcr.io/branpurn/retrans:<tag>
-RETRANS_IMAGE_TAG=<tag> docker compose --profile loopback up
+docker rm -f retrans
+docker pull ghcr.io/branpurn/retrans:latest
+docker run --rm --init -p 127.0.0.1:8788:8788 IMAGE retrans serve
 ```
 
-Open http://127.0.0.1:8788. Same origin serves UI + `/api`. Never `0.0.0.0` / LAN / hotspot. No published `8788:8788`. Vite `5173` is not the operator path.
+Open http://127.0.0.1:8788. Same origin serves UI + `/api`. Host publish is `127.0.0.1:8788` only — never host `0.0.0.0` / LAN / hotspot. Never `-p 8788:8788`. NOT `--network host`. Vite `5173` is not the operator path.
 
-Linux host network so `retrans serve` can bind `127.0.0.1:8788` on the host. Publishing `8788:8788` is forbidden (that would require listen `0.0.0.0` inside the container).
+Inside the container, `retrans serve` listens on `0.0.0.0:8788` (container veth only) so `-p 127.0.0.1:8788:8788` reaches the process. That is not a host LAN publish. On the host, `retrans serve` still binds `127.0.0.1:8788` only.
 
-Loopback is one service and does not start the live ffmpeg worker. Live workers (`docker compose --profile live up`) stay idle without keys; concurrent keyed workers are allowed. Tagged images come from GitHub Releases (or `workflow_dispatch`).
+Loopback is one service and does not start the live ffmpeg worker. Live workers (`docker compose --profile live up`) stay idle without keys; concurrent keyed workers are allowed. Tagged images come from GitHub Releases (or `workflow_dispatch`). Infra republishes `:latest` after a MERGEABLE SHA is on main.
 
 ## Sign in → Drop link → Retrans (loopback, 127.0.0.1 only)
 
@@ -50,8 +51,13 @@ Operator run path on loopback `127.0.0.1` only — never `0.0.0.0` / LAN / hotsp
 
 How to run that path:
 
-- `docker pull ghcr.io/branpurn/retrans:<tag>` then `RETRANS_IMAGE_TAG=<tag> docker compose --profile loopback up`
-- Open http://127.0.0.1:8788 — never `0.0.0.0`
+```bash
+docker rm -f retrans
+docker pull ghcr.io/branpurn/retrans:latest
+docker run --rm --init -p 127.0.0.1:8788:8788 IMAGE retrans serve
+```
+
+- Open http://127.0.0.1:8788 — never host `0.0.0.0`
 - Control API is same-origin `/api/...` on 8788
 - Vite `5173` is not the operator path
 
@@ -95,7 +101,7 @@ retrans resolve 'https://www.youtube.com/watch?v=…'
 
 ## Local HTTP control API (`retrans serve`)
 
-`retrans serve` **must** listen on `127.0.0.1:8788`. `HOST=0.0.0.0` (and any LAN / hotspot / wildcard bind) is refused with a non-zero exit. There is no `/api/clip` route.
+On the host, `retrans serve` **must** listen on `127.0.0.1:8788`. Inside a container it listens on `0.0.0.0:8788` (veth only; host publish is `-p 127.0.0.1:8788:8788`). LAN / hotspot host IPs are refused with a non-zero exit. `HOST=0.0.0.0` on the host is refused. There is no `/api/clip` route.
 
 **Sign in** = `PUT /api/live/credentials` or env `RETRANS_X_RTMP_URL` / `RETRANS_X_RTMP_KEY`.  
 **Drop link** = `source_url`. Preview = `GET /api/live/preview?source_url=` (yt-dlp title + `is_live`; no ffmpeg).  
