@@ -91,9 +91,33 @@ Shown when `GET /api/live/credentials` → `{ configured: false }` (or first vis
 | --- | --- |
 | Title | `Drop link` |
 | Field | Single large URL field. Placeholder: `Paste YouTube live URL` |
-| Preview | On blur / Enter, or a Preview control — thumbnail + title + **LIVE** badge if the source is live |
+| Preview | On blur / Enter, or a Preview control — preview card (fields below) |
 | Gate | Checkbox, exact copy: `I have permission or fair use to retransmit this live.` |
 | Primary | **Continue** (or **Next**) |
+
+### Preview card chrome (Beat 2 + Beat 3 compact)
+
+Consume `GET /api/live/preview` for `title` + `is_live`. Same LIVE badge + real title rules on the Beat 3 compact preview.
+
+Preview card fields:
+
+| Field | Rule |
+| --- | --- |
+| Thumbnail | Show when available |
+| Title | Real `title` from `GET /api/live/preview` when present. Never invent a synthetic `YouTube source <id>` placeholder. Never invent clip/VOD marketing copy. If `title` is empty, leave empty or show host-only. |
+| Host | Host from the source URL when available |
+| LIVE badge | Existing `.live-badge` chrome / `--live` token. Show **iff** `is_live === true`. |
+
+When the source is **actually live** (`is_live === true`):
+
+- Show the **LIVE** badge on the preview card.
+- Show the **real source title** from the preview payload (`title`). Not a synthetic `YouTube source <id>` placeholder.
+
+When the source is **VOD / not live** (`is_live` is not `true`):
+
+- **No LIVE badge** (QA expected that).
+- Still show the preview card with thumbnail + title/host when available.
+- Continue/Start stay gated by preview-ok rules already in this file (live-first product: non-live may fail Start with API error — do not add clip UI).
 
 Enable Continue only when **all** are true:
 
@@ -105,13 +129,13 @@ YouTube first. Non-YouTube: helper `YouTube first` (exact). Other URLs stay not-
 
 Optional: small **Change destination** link (not a button row, not a settings page) that returns to Beat 1 with empty fields.
 
-No RTMP fields on this beat. No start/stop.
+No RTMP fields on this beat. No start/stop. Preview payload has no RTMP fields — never display rtmp secrets from preview.
 
 ## Beat 3 — Retrans
 
 | Element | Rule |
 | --- | --- |
-| Source | Compact source preview (thumbnail + title + LIVE badge if live) + the top-bar status pill |
+| Source | Compact source preview — same card fields as Beat 2 (thumbnail, real `title` when available, host, **LIVE** badge iff `is_live === true`) + the top-bar status pill |
 | Primary | **Start live retrans** — enabled when ready |
 | Danger | **Stop** — enabled **only while LIVE** |
 | Helper | see below |
@@ -145,13 +169,14 @@ Localhost only. Vite proxies `/api` → `http://127.0.0.1:8788`. Never `0.0.0.0`
 | `GET` | `/api/live/credentials` | `200 { "configured": true \| false }` **only**. Never echo `rtmp_url` or `rtmp_key`. |
 | `POST` | `/api/live/start` | `{ "source_url":"…" }` **only** → `200 { "ok": true, "state": "starting" }` (process up → later status `live`). `400` missing/invalid / not a live stream. `409` already running. |
 | `POST` | `/api/live/stop` | existing live API — `200 { "ok": true, "state": "stopped" }` (also `200`/`ok` if already idle) |
+| `GET` | `/api/live/preview` | Query `source_url`. `127.0.0.1:8788`. Response `{ "ok", "source_url", "title", "is_live" }` **only**. No `rtmp_url` / `rtmp_key`. Never echo secrets. **LIVE** badge iff `is_live === true`. Show real `title` (not a synthetic `YouTube source <id>` placeholder). |
 | `GET` | `/api/live/status` | existing live API — `200 { "ok": true, "state": "idle"\|"starting"\|"live"\|"error"\|"stopped", "source_url": "…" or null, "error": null or string }` |
 
 Responses **never** echo `rtmp_key` or `rtmp_url`. Redact those substrings in any error string shown in the UI.
 
 `POST /api/live/start` does **not** accept destination fields in the operator UI. Destination is the saved credentials.
 
-Keep stop/status as the existing live API. Status poll fail stays Idle (Error chrome locks above).
+Keep stop/status as the existing live API. Consume `GET /api/live/preview` for `title` + `is_live`. Status poll fail stays Idle (Error chrome locks above).
 
 ## Tokens
 
