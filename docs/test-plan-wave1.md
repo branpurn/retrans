@@ -20,7 +20,7 @@ Operator-facing plan for the **live** restream path. This document is the plan o
 
 - Live YouTube source URL → continuous live restream to the operator RTMP (X Media Studio).
 - Operator start / stop of that live path.
-- Permission / fair-use acknowledgment before go-live (see [permissions-and-fair-use.md](permissions-and-fair-use.md)).
+- Permission / fair-use acknowledgment before go-live (see [permission-fair-use.md](permission-fair-use.md)).
 
 **Out of scope**
 
@@ -34,7 +34,7 @@ Operator-facing plan for the **live** restream path. This document is the plan o
 
 Before any live attempt:
 
-1. Operator YouTube access to a **live** source the operator has rights to restream (see [permissions-and-fair-use.md](permissions-and-fair-use.md)).
+1. Operator YouTube access to a **live** source the operator has rights to restream (see [permission-fair-use.md](permission-fair-use.md)).
 2. Operator X account with Media Studio (or equivalent) **live RTMP** ingest: destination URL + stream key held by the operator.
 3. Backend has named a runnable **live-path SHA**. Frontend/operator UI, if used, is that SHA — not an ad-hoc build.
 4. Operator confirms permission / fair-use **before** start. No go-live without that confirmation.

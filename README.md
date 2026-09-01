@@ -15,7 +15,6 @@ Layout: [design/layout-v1.md](design/layout-v1.md)
 - [Permission / fair use](docs/permission-fair-use.md)
 - [X API notes](docs/x-api-notes.md)
 - [Wave 1 test plan](docs/test-plan-wave1.md) — operator plan for live YouTube → operator RTMP. Plan only; not a live PASS. Live clicks wait for a Backend live-path SHA.
-- [Permissions and fair use (QA)](docs/permissions-and-fair-use.md) — rights, fair-use limits, and go-live confirmation.
 
 Wave 1 path: **live source URL → continuous live restream** to the operator’s RTMP endpoint (X Media Studio). Success is an on-air live at that destination — not a clip or VOD post.
 
