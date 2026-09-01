@@ -72,6 +72,23 @@ describe("enablement", () => {
     assert.equal(chromePill({ ok: true, state: "error", error: "boom", httpStatus: 200 }, true), "Error");
   });
 
+  it("mid-restream death status {state:error,error} shows unchanged in Error helper", () => {
+    const error = "ffmpeg restream exited";
+    const result = { ok: true, state: "error", error, httpStatus: 200 };
+    assert.equal(isUsableStatus(result), true);
+    assert.equal(backendFromResult(result), "error");
+    assert.equal(chromePill(result, true), "Error");
+    // Server already redacts secrets; helper shows the clear string unchanged.
+    assert.equal(transportHelper({ backend: "error", error }), error);
+    assert.equal(
+      transportHelper({
+        backend: "error",
+        error: redactSecrets(error, ["rtmps://a.media.example/live", "streamkey"]),
+      }),
+      error,
+    );
+  });
+
   it("idle GET {error:null} stays Idle/Preview, not Error", () => {
     const result = { ok: true, state: "idle", error: null, httpStatus: 200 };
     assert.equal(isUsableStatus(result), true);
