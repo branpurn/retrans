@@ -244,7 +244,7 @@ def test_error_redacts_rtmp_secrets(api_factory):
         {"source_url": SOURCE, "rtmp_url": SECRET_URL, "rtmp_key": SECRET_KEY},
     )
     for _ in range(50):
-        status, data, raw = _req(port, "GET", "/api/live/status")
+        _, data, raw = _req(port, "GET", "/api/live/status")
         if data["state"] == "error":
             break
         threading.Event().wait(0.05)

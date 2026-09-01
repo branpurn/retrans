@@ -12,9 +12,9 @@ def is_youtube_url(page_url: str) -> bool:
     host = (urlparse(page_url).hostname or "").lower()
     if host == "youtu.be":
         return True
-    return host == "youtube.com" or host.endswith(".youtube.com") or host == (
-        "youtube-nocookie.com"
-    ) or host.endswith(".youtube-nocookie.com")
+    return host in {"youtube.com", "youtube-nocookie.com"} or host.endswith(
+        (".youtube.com", ".youtube-nocookie.com")
+    )
 
 
 class YouTubeSource:

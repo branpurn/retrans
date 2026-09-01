@@ -13,8 +13,9 @@ import os
 import socket
 import socketserver
 import threading
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urlparse
 
 from retrans.config import DEFAULT_PORT, HOST_ENV, LOOPBACK_HOST, PORT_ENV, redact
@@ -230,7 +231,7 @@ def make_handler(controller: LiveController) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             self.wfile.write(body)
 
-        def do_OPTIONS(self) -> None:  # noqa: N802
+        def do_OPTIONS(self) -> None:
             self.send_response(204)
             origin = _cors_origin(self)
             if origin:
@@ -240,13 +241,13 @@ def make_handler(controller: LiveController) -> type[BaseHTTPRequestHandler]:
             self.send_header("Content-Length", "0")
             self.end_headers()
 
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             if self.path.split("?", 1)[0] != "/api/live/status":
                 self._send(404, {"ok": False, "error": "not found"})
                 return
             self._send(200, controller.public_status())
 
-        def do_POST(self) -> None:  # noqa: N802
+        def do_POST(self) -> None:
             path = self.path.split("?", 1)[0]
             if path == "/api/live/stop":
                 state = controller.stop()
