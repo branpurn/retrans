@@ -1,171 +1,22 @@
 # RETRANS
 
-Public product name: **RETRANS**. Code and package: `retrans`.
+Live YouTube → X. Product **RETRANS**. Code/repo `retrans`. No clip. No OAuth.
 
-retransmit YouTube (and other) live streams to X.com as X live. Extensible input sources; YouTube first. Code paths: `retrans`.
-
-Success is live retrans via Media Studio RTMP + retrans bridge: a live YouTube (or other live) source comes out as X live. Not VOD clips. Not INIT/APPEND/FINALIZE clip posts as the product.
-
-Wave 1 operator UI: paste a YouTube live URL → preview → Media Studio RTMP destination → permission / fair-use ack → start/stop **LIVE** retrans to X.
-
-Sign in = `PUT /api/live/credentials` or env `RETRANS_X_RTMP_URL` / `RETRANS_X_RTMP_KEY` (local file mode 0600; env wins on read). Drop link = `source_url`. Retrans = `POST /api/live/start` using the store. Media Studio Create Broadcast + Go Live still required. No X OAuth.
-
-Not clip-post. Not VOD. Not file upload. Status language is live only (Idle | Preview | LIVE | Stopped | Error). Never Posted / Clip / Tweet / Upload.
-
-Primary operator UI (three beats): [design/primary-flow.md](design/primary-flow.md)
-Layout: [design/layout-v1.md](design/layout-v1.md)
-
-- [Permission / fair use](docs/permission-fair-use.md)
-- [X API notes](docs/x-api-notes.md)
-- [Wave 1 test plan](docs/test-plan-wave1.md) — operator plan for live YouTube → operator RTMP. Plan only; not a live PASS. Live clicks wait for a Backend live-path SHA.
-
-Wave 1 path: **live source URL → continuous live restream** to the operator’s RTMP endpoint (X Media Studio). Success is an on-air live at that destination — not a clip or VOD post.
-
-There is **no public X API** to create a live broadcast or mint an RTMP key. Sending RTMP alone is **not** enough — the operator must create a source, create a broadcast, and click **Go Live** in Media Studio ([Restream](https://restream.io/learn/platforms/how-to-find-x-stream-key/), [Castr](https://docs.castr.com/en/articles/5119218-how-to-stream-live-video-to-x-formerly-twitter-using-castr), [vMix](https://www.vmix.com/knowledgebase/article.aspx/373/stream-to-x-using-custom-rtmp)).
-
-Operator image: **`ghcr.io/branpurn/retrans`** (Vite `dist/` + ffmpeg + yt-dlp + streamlink + `retrans serve`). Secrets via `.env` / env vars only (copy `.env.example`; never commit `.env`).
-
-## Operator (GHCR + published loopback)
-
-Pull the image and publish **only** `127.0.0.1:8788:8788`. **Operator URL:** `http://127.0.0.1:8788` **only**. Not `--network host`. Host never binds `0.0.0.0:8788`.
+## Run
 
 ```bash
-docker rm -f retrans
 docker pull ghcr.io/branpurn/retrans:latest
-docker run --rm --init -p 127.0.0.1:8788:8788 IMAGE retrans serve
+docker rm -f retrans; docker run --rm --init -p 127.0.0.1:8788:8788 --name retrans ghcr.io/branpurn/retrans:latest retrans serve
 ```
 
-`IMAGE` is `ghcr.io/branpurn/retrans:latest` (or a release tag). Open http://127.0.0.1:8788. Same origin serves UI + `/api`. Host publish is `127.0.0.1:8788:8788` only — never host `0.0.0.0` / LAN / hotspot. Never `-p 8788:8788`. NOT `--network host`. Vite `5173` is not the operator path.
+Open http://127.0.0.1:8788
 
-Rootless Docker does not put `network_mode: host` / `--network host` on the real host `127.0.0.1`. Inside the container, `retrans serve` listens on `0.0.0.0:8788` (container veth only) so `-p 127.0.0.1:8788:8788` reaches the process. Infra sets `HOST=0.0.0.0` **inside the container only**. That is not a host LAN publish. On the host, `retrans serve` still binds `127.0.0.1:8788` only.
+NOT `--network host`. Not 0.0.0.0. Not Vite 5173. Not a git clone.
 
-Same mapping via compose (one loopback service; `ports: 127.0.0.1:8788:8788`; no `network_mode: host`; `init: true`; does not start the live ffmpeg worker):
+## Use
 
-```bash
-docker pull ghcr.io/branpurn/retrans:<tag>
-RETRANS_IMAGE_TAG=<tag> docker compose --profile loopback up
-```
+**Sign in** = named stream keys only (RTMP URL hidden). `?` for Media Studio Sources.
 
-Live workers (`docker compose --profile live up`) stay idle without keys; concurrent keyed workers are allowed. Tagged images come from GitHub Releases (or `workflow_dispatch`). Infra republishes `:latest` after a MERGEABLE SHA is on main.
+Drop a live URL → Retrans. You must have permission or fair use.
 
-## Sign in → Drop link → Retrans (loopback, 127.0.0.1 only)
-
-Operator run path on loopback `127.0.0.1` only — never `0.0.0.0` / LAN / hotspot. Live page URL only. No clip path. No VOD.
-
-1. **Sign in:** operator supplies X Media Studio RTMP URL + stream key (env `RETRANS_X_RTMP_URL` / `RETRANS_X_RTMP_KEY` or the UI fields). Do not commit secrets.
-2. **Drop link:** paste/drop a live YouTube (or other live) page URL. Not a VOD/clip file.
-3. **Retrans:** fair-use ack, then Start LIVE. Still Create Broadcast + Go Live in Media Studio.
-
-How to run that path:
-
-```bash
-docker rm -f retrans
-docker pull ghcr.io/branpurn/retrans:latest
-docker run --rm --init -p 127.0.0.1:8788:8788 IMAGE retrans serve
-```
-
-- Or `RETRANS_IMAGE_TAG=<tag> docker compose --profile loopback up` (same `127.0.0.1:8788:8788` publish)
-- Open http://127.0.0.1:8788 — never host `0.0.0.0`
-- Control API is same-origin `/api/...` on 8788
-- Vite `5173` is not the operator path
-
-## Permission / fair use
-
-This restreams a live source to the **operator’s** X account. The operator must have rights to the source. Restreaming someone else’s YouTube live without permission can violate YouTube’s Terms of Service and copyright. This is not legal advice. RETRANS is not a hidden bot.
-
-## Operator setup (studio.x.com)
-
-Requires X Premium / Premium+.
-
-1. Open [https://studio.x.com](https://studio.x.com) (Media Studio **Producer**).
-2. **Sources → Create Source** → type **RTMP**, pick a region close to you → copy the **RTMP(S) URL** and **stream key**. Do not commit these.
-3. **Broadcasts → Create Broadcast** → select that source.
-4. Start `retrans live` (or `retrans serve` + the operator UI) so ffmpeg is sending to that URL+key.
-5. In Media Studio, **Go Live**.
-
-```bash
-export RETRANS_X_RTMP_URL='rtmps://…'
-export RETRANS_X_RTMP_KEY='…'
-```
-
-## Install
-
-Developer checkout (not the operator path — operators pull GHCR and compose):
-
-```bash
-pip install -e .
-```
-
-Package name: `retrans`. Console script: `retrans`.
-
-## Product command
-
-```bash
-retrans live 'https://www.youtube.com/watch?v=…'
-retrans resolve 'https://www.youtube.com/watch?v=…'
-```
-
-`retrans live` resolves the page URL (YouTube first, yt-dlp then streamlink) and restreams H.264 + AAC in FLV to the operator RTMP URL+key.
-
-## Local HTTP control API (`retrans serve`)
-
-On the host, `retrans serve` and `scripts/loopback.sh` **must** listen on `127.0.0.1:8788`. `HOST=0.0.0.0` on the host (and any LAN / hotspot / wildcard bind) is refused with a non-zero exit.
-
-Inside a container, infra sets `HOST=0.0.0.0` so `retrans serve` listens on `0.0.0.0:8788` (veth only). Host publish is `-p 127.0.0.1:8788:8788`. Host never binds `0.0.0.0:8788`. There is no `/api/clip` route.
-
-**Sign in** = `PUT /api/live/credentials` or env `RETRANS_X_RTMP_URL` / `RETRANS_X_RTMP_KEY`.  
-**Drop link** = `source_url`. Preview = `GET /api/live/preview?source_url=` (yt-dlp title + `is_live`; no ffmpeg).  
-**Retrans** = `POST /api/live/start`. Media Studio **Create Broadcast** + **Go Live** are still required. There is no public X OAuth to mint Media Studio RTMP keys — do not invent one.
-
-Credentials persist to `$XDG_CONFIG_HOME/retrans/credentials.json` (else `~/.config/retrans/credentials.json`) at mode **0600**. Env wins over the file on read. `DELETE` removes the file only (does not unset process env). Responses **never** echo `rtmp_url` or `rtmp_key` (not even a masked key). They are never logged.
-
-```bash
-retrans serve
-```
-
-| Method | Path | Body / response |
-| --- | --- | --- |
-| `PUT` | `/api/live/credentials` | JSON `{"rtmp_url":"…","rtmp_key":"…"}` → `200 {"ok":true,"configured":true}`. `400` empty/invalid (`rtmp://` or `rtmps://` only, same rules as start). Never echoes secrets. |
-| `GET` | `/api/live/credentials` | `200 {"ok":true,"configured":true\|false}`. `configured` is true when both URL and key are present from env or file. Never echoes secrets. |
-| `GET` | `/api/live/preview` | Query `source_url`. `200 {"ok":true,"source_url":"…","title":"…","is_live":true\|false}`. Title from yt-dlp JSON `title` (may be `""` if unknown). `is_live` is true when `live_status` is `is_live` **or** JSON `is_live` is true. Confirmed `not_live` / `was_live` stay `200` with `is_live:false` and the real title when available. YouTube first (probe via yt-dlp `-J`; no ffmpeg, no restream worker). `400 {"ok":false,"error":"…"}` missing/invalid URL or non-YouTube. `502 {"ok":false,"error":"…"}` when yt-dlp fails — not `200` with empty title / `is_live:false`. GET never returns `rtmp_url`, `rtmp_key`, or `destination`. |
-| `DELETE` | `/api/live/credentials` | Removes the file. `200 {"ok":true,"configured":true\|false}` — still `true` if env is set. |
-| `POST` | `/api/live/start` | JSON `{"source_url":"…"}` is enough when configured. `rtmp_url`/`rtmp_key` in the body still work as a one-shot override. → `200 {"ok":true,"state":"starting"}` (process up → later status `live`). `400` if not configured and body lacks RTMP fields, or invalid fields, **or not a live stream** (VOD / clip / upcoming / ended — ffmpeg/RTMP are not started). `409` already running. |
-| `POST` | `/api/live/stop` | `200 {"ok":true,"state":"stopped"}` (also `200`/`ok` if already idle) |
-| `GET` | `/api/live/status` | `200 {"ok":true,"state":"idle"\|"starting"\|"live"\|"error"\|"stopped","source_url":"…" or null,"error":null or string}` |
-
-Responses **never** echo `rtmp_key` or `rtmp_url`. If ffmpeg exits unexpectedly (non-zero **or** zero without an operator stop), `GET /api/live/status` becomes `state=error` with a redacted reason — not a stuck `live` or a clean `stopped`. Operator `POST /api/live/stop` is still `stopped`. After `error`, `stopped`, or `idle`, `POST /api/live/start` starts a new session on the same serve process (no restart required) and clears the previous error. `409` already-running is only when a session is actually `starting` or `live`.
-
-## Operator UI (this PR)
-
-Product string **RETRANS**. Code, files, and package: `retrans`. Chrome matches [design/layout-v1.md](design/layout-v1.md). Operators run GHCR + compose (above), not this host npm path.
-
-```bash
-npm install
-npm run build    # static dist/ for retrans serve on 8788 (base './')
-npm run dev      # Vite on 127.0.0.1:5173 — not the operator path; proxies /api → http://127.0.0.1:8788
-npm test
-```
-
-**Operator URL:** `http://127.0.0.1:8788` **only** (same origin serves UI + `/api`). Vite `5173` is not the operator path. Fetch is relative `/api/...`. Do not bind or proxy `0.0.0.0`. Vite `server.host` is `127.0.0.1` only. Vite `base` is `./` so `dist/` assets load when served from 8788.
-
-| Field | Env | Meaning |
-| --- | --- | --- |
-| `source_url` | — | Page URL to restream (YouTube first) |
-| `rtmp_url` | `RETRANS_X_RTMP_URL` | RTMP(S) URL from studio.x.com → Sources → Create Source |
-| `rtmp_key` | `RETRANS_X_RTMP_KEY` | Stream key (password). Never logged, never shown after submit. |
-
-Sign in stores those dest fields once (`PUT /api/live/credentials` or env). After that, start only needs `source_url`.
-
-- **Start live retrans** only when: preview ok + dest (store/env or fields) + fair-use ack + status not LIVE
-- **Stop** only when LIVE
-- Ack copy: `I have permission or fair use to retransmit this live.` (not legal advice)
-- After Start, still Create Broadcast + Go Live in Media Studio
-- No clip routes and no clip UI
-
-## Debug aid (not the product)
-
-```bash
-retrans clip 'https://…' --start 00:00:00 --end 00:00:30 -o /tmp/debug.mp4
-```
-
-Clip cutter is a debug aid, not the product. Clip upload is fail / not default. Not in the operator GUI.
+Developers: [docs/operator.md](docs/operator.md)

@@ -103,5 +103,12 @@ def test_readme_does_not_claim_host_wildcard_publish():
     readme = Path("README.md").read_text(encoding="utf-8")
     assert "-p 0.0.0.0:8788" not in readme
     assert "0.0.0.0:8788:8788" not in readme
-    assert "-p 127.0.0.1:8788:8788 IMAGE retrans serve" in readme
+    assert "-p 127.0.0.1:8788:8788" in readme
+    assert "--name retrans" in readme
+    assert "retrans serve" in readme
     assert "NOT `--network host`" in readme
+    run_line = next(line for line in readme.splitlines() if "docker run --rm --init" in line)
+    assert "--name retrans" in run_line
+    assert "retrans serve" in run_line
+    assert "--network host" not in run_line
+    assert "0.0.0.0" not in run_line
