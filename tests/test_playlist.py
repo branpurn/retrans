@@ -40,11 +40,12 @@ class _ControllableJob:
         self._started = threading.Event()
         self._released = threading.Event()
 
-    def start(self, source_url, rtmp_url, rtmp_key, require_live=True):
+    def start(self, source_url, rtmp_url, rtmp_key, require_live=True, preview_dir=None):
         self.source_url = source_url
         self.rtmp_url = rtmp_url
         self.rtmp_key = rtmp_key
         self.require_live = require_live
+        self.preview_dir = preview_dir
         self._started.set()
 
     def wait(self):
@@ -80,6 +81,7 @@ def isolate_store(tmp_path, monkeypatch):
     monkeypatch.delenv("RETRANS_X_RTMP_URL", raising=False)
     monkeypatch.delenv("RETRANS_X_RTMP_KEY", raising=False)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setenv("RETRANS_OUTBOUND_DIR", str(tmp_path / "outbound"))
     return tmp_path / "xdg"
 
 

@@ -25,6 +25,8 @@ HOST_ENV = "HOST"
 PORT_ENV = "PORT"
 LOOPBACK_HOST = "127.0.0.1"
 DEFAULT_PORT = 8788
+# Per-session HLS/fMP4 outbound of the live encode (same process, no second port).
+OUTBOUND_DIR_ENV = "RETRANS_OUTBOUND_DIR"
 
 
 def redact(text: str, *secrets: str | None) -> str:

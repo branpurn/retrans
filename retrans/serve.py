@@ -52,6 +52,14 @@ from retrans.keys import (
     validate_key_payload,
 )
 from retrans.ingest import NotLiveError, ResolveError, StreamResolver
+from retrans.outbound import (
+    clear_session_dir,
+    ensure_session_dir,
+    outbound_content_type,
+    outbound_url_path,
+    parse_outbound_path,
+    resolve_outbound_file,
+)
 from retrans.outputs.x import RestreamError, XLiveRestream, join_rtmp_destination
 from retrans.sources.youtube import is_youtube_url
 
@@ -221,6 +229,8 @@ class LiveController:
         self._job: XLiveRestream | None = None
         self._thread: threading.Thread | None = None
         self._generation = 0
+        self._preview_dir: str | None = None
+        self._outbound_session_id: str | None = None
 
     @property
     def busy(self) -> bool:
@@ -269,7 +279,44 @@ class LiveController:
         message = error_fn() if callable(error_fn) else "ffmpeg restream exited"
         self._error = message or "ffmpeg restream exited"
 
-    def start(self, source_url: str, rtmp_url: str, rtmp_key: str) -> str:
+    def allows_outbound(self, session_id: str) -> bool:
+        """True while this controller is starting/live for that outbound session."""
+        with self._lock:
+            self._reconcile_dead_process_locked()
+            return bool(
+                self._state in {"starting", "live"}
+                and self._outbound_session_id == session_id
+            )
+
+    def _bind_outbound_locked(
+        self,
+        preview_dir: str | None,
+        outbound_session_id: str | None,
+    ) -> None:
+        if outbound_session_id:
+            self._outbound_session_id = outbound_session_id
+        elif not self._outbound_session_id:
+            self._outbound_session_id = uuid.uuid4().hex[:12]
+        if preview_dir:
+            self._preview_dir = preview_dir
+            Path(preview_dir).mkdir(parents=True, exist_ok=True)
+        else:
+            self._preview_dir = str(ensure_session_dir(self._outbound_session_id))
+
+    def _release_outbound_locked(self) -> None:
+        sid = self._outbound_session_id
+        if sid:
+            clear_session_dir(sid)
+
+    def start(
+        self,
+        source_url: str,
+        rtmp_url: str,
+        rtmp_key: str,
+        *,
+        preview_dir: str | None = None,
+        outbound_session_id: str | None = None,
+    ) -> str:
         with self._lock:
             self._reconcile_dead_process_locked()
             if self.busy:
@@ -283,6 +330,7 @@ class LiveController:
             self._source_urls = None
             self._source_index = 0
             self._error = None
+            self._bind_outbound_locked(preview_dir, outbound_session_id)
             job = self._factory()
             self._job = job
             thread = threading.Thread(
@@ -295,7 +343,15 @@ class LiveController:
             thread.start()
             return "starting"
 
-    def start_playlist(self, source_urls: list[str], rtmp_url: str, rtmp_key: str) -> str:
+    def start_playlist(
+        self,
+        source_urls: list[str],
+        rtmp_url: str,
+        rtmp_key: str,
+        *,
+        preview_dir: str | None = None,
+        outbound_session_id: str | None = None,
+    ) -> str:
         """Ordered VOD+live restream. Same encode + RTMP dest; roll on ffmpeg EOF."""
         urls = [url for url in source_urls if url]
         if not urls:
@@ -311,6 +367,7 @@ class LiveController:
             self._source_index = 0
             self._source_url = urls[0]
             self._error = None
+            self._bind_outbound_locked(preview_dir, outbound_session_id)
             job = self._factory()
             self._job = job
             thread = threading.Thread(
@@ -328,8 +385,11 @@ class LiveController:
             job = self._job
             self._state = "stopped"
             self._error = None
+            sid = self._outbound_session_id
         if job is not None:
             job.stop()
+        if sid:
+            clear_session_dir(sid)
         return "stopped"
 
     def _run(
@@ -343,7 +403,7 @@ class LiveController:
         dest = ""
         try:
             dest = join_rtmp_destination(rtmp_url, rtmp_key)
-            job.start(source_url, rtmp_url, rtmp_key)
+            self._invoke_start(job, source_url, rtmp_url, rtmp_key, require_live=True)
             stop_self = False
             with self._lock:
                 if not self._owns_session_locked(job, generation):
@@ -371,6 +431,7 @@ class LiveController:
                         self._error = error_fn() or "ffmpeg restream exited"
                     else:
                         self._error = "ffmpeg restream exited"
+                    self._release_outbound_locked()
         except Exception as exc:  # noqa: BLE001
             with self._lock:
                 if not self._owns_session_locked(job, generation):
@@ -379,6 +440,7 @@ class LiveController:
                     return
                 self._state = "error"
                 self._error = redact(str(exc), rtmp_url, rtmp_key, dest)
+                self._release_outbound_locked()
 
     def _invoke_start(
         self,
@@ -388,14 +450,25 @@ class LiveController:
         rtmp_key: str,
         require_live: bool,
     ) -> None:
-        """Call job.start. Playlist passes require_live=False; test doubles may omit it."""
-        if require_live:
-            job.start(source_url, rtmp_url, rtmp_key)
-            return
-        try:
-            job.start(source_url, rtmp_url, rtmp_key, require_live=False)
-        except TypeError:
-            job.start(source_url, rtmp_url, rtmp_key)
+        """Call job.start. Playlist passes require_live=False; test doubles may omit extras."""
+        extras: dict[str, Any] = {}
+        if not require_live:
+            extras["require_live"] = False
+        if self._preview_dir:
+            extras["preview_dir"] = self._preview_dir
+        if extras:
+            try:
+                job.start(source_url, rtmp_url, rtmp_key, **extras)
+                return
+            except TypeError:
+                extras.pop("preview_dir", None)
+                if extras:
+                    try:
+                        job.start(source_url, rtmp_url, rtmp_key, **extras)
+                        return
+                    except TypeError:
+                        pass
+        job.start(source_url, rtmp_url, rtmp_key)
 
     def _apply_exit_error_locked(self, job: XLiveRestream) -> None:
         if self._state != "error" or not self._error:
@@ -448,10 +521,12 @@ class LiveController:
                         return
                     if int(code or 0) != 0:
                         self._apply_exit_error_locked(current)
+                        self._release_outbound_locked()
                         return
                     if index + 1 >= len(source_urls):
                         self._state = "stopped"
                         self._error = None
+                        self._release_outbound_locked()
                         return
         except Exception as exc:  # noqa: BLE001
             with self._lock:
@@ -461,6 +536,7 @@ class LiveController:
                     return
                 self._state = "error"
                 self._error = redact(str(exc), rtmp_url, rtmp_key, dest)
+                self._release_outbound_locked()
 
 
 class SessionHub:
@@ -484,7 +560,18 @@ class SessionHub:
         }
         if "source_index" in status:
             payload["source_index"] = status["source_index"]
+        if status.get("state") in {"starting", "live"}:
+            payload["outbound_url"] = outbound_url_path(entry["session_id"])
         return payload
+
+    def allows_outbound(self, session_id: str) -> bool:
+        with self._lock:
+            entry = self._by_session.get(session_id)
+            if entry is None:
+                return False
+            controller = entry["controller"]
+        status = controller.public_status()
+        return status.get("state") in {"starting", "live"}
 
     def sessions_public(self) -> list[dict[str, Any]]:
         with self._lock:
@@ -505,10 +592,19 @@ class SessionHub:
                 if entry["controller"].busy:
                     raise AlreadyRunning("already running")
                 entry["name"] = name
+                preview = str(ensure_session_dir(entry["session_id"]))
+                extras = {
+                    "preview_dir": preview,
+                    "outbound_session_id": entry["session_id"],
+                }
                 if source_urls:
-                    state = entry["controller"].start_playlist(source_urls, rtmp_url, rtmp_key)
+                    state = entry["controller"].start_playlist(
+                        source_urls, rtmp_url, rtmp_key, **extras
+                    )
                 else:
-                    state = entry["controller"].start(source_url, rtmp_url, rtmp_key)
+                    state = entry["controller"].start(
+                        source_url, rtmp_url, rtmp_key, **extras
+                    )
                 return {
                     "session_id": entry["session_id"],
                     "key_id": key_id,
@@ -524,10 +620,17 @@ class SessionHub:
             }
             self._by_key[key_id] = entry
             self._by_session[session_id] = entry
+            preview = str(ensure_session_dir(session_id))
+            extras = {
+                "preview_dir": preview,
+                "outbound_session_id": session_id,
+            }
             if source_urls:
-                state = controller.start_playlist(source_urls, rtmp_url, rtmp_key)
+                state = controller.start_playlist(
+                    source_urls, rtmp_url, rtmp_key, **extras
+                )
             else:
-                state = controller.start(source_url, rtmp_url, rtmp_key)
+                state = controller.start(source_url, rtmp_url, rtmp_key, **extras)
             return {"session_id": session_id, "key_id": key_id, "state": state}
 
     def stop(self, session_id: str | None = None, key_id: str | None = None) -> str:
@@ -706,6 +809,41 @@ def make_handler(
             self.end_headers()
             self.wfile.write(body)
 
+        def _send_bytes(self, data: bytes, content_type: str) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            origin = _cors_origin(self)
+            if origin:
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _outbound_media(self, path: str) -> None:
+            """Serve the live encode tee (HLS fMP4). Not GET /api/live/preview."""
+            parsed = parse_outbound_path(path)
+            if parsed is None:
+                self._send(404, {"ok": False, "error": "not found"})
+                return
+            session_id, name = parsed
+            if not hub.allows_outbound(session_id) and not controller.allows_outbound(
+                session_id
+            ):
+                self._send(404, {"ok": False, "error": "not found"})
+                return
+            file_path = resolve_outbound_file(session_id, name)
+            if file_path is None:
+                self._send(404, {"ok": False, "error": "not found"})
+                return
+            try:
+                data = file_path.read_bytes()
+            except OSError:
+                self._send(404, {"ok": False, "error": "not found"})
+                return
+            self._send_bytes(data, outbound_content_type(name))
+
         def _send_static(self, url_path: str) -> bool:
             dist = resolve_dist_dir()
             if dist is None:
@@ -748,6 +886,9 @@ def make_handler(
 
         def do_GET(self) -> None:
             path = urlsplit(self.path).path
+            if path.startswith("/live/"):
+                self._outbound_media(path)
+                return
             if path == "/api/live/credentials":
                 self._send(200, {"ok": True, "configured": is_configured()})
                 return

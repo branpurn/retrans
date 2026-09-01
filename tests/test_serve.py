@@ -34,7 +34,7 @@ class ImmediateLive:
         self.stopped = False
         self._started = threading.Event()
 
-    def start(self, source_url, rtmp_url, rtmp_key):
+    def start(self, source_url, rtmp_url, rtmp_key, **_k):
         assert source_url == SOURCE
         assert rtmp_key == SECRET_KEY
         self._started.set()
@@ -108,6 +108,7 @@ def isolate_credentials(tmp_path, monkeypatch):
     monkeypatch.delenv("RETRANS_X_RTMP_URL", raising=False)
     monkeypatch.delenv("RETRANS_X_RTMP_KEY", raising=False)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setenv("RETRANS_OUTBOUND_DIR", str(tmp_path / "outbound"))
 
 
 @pytest.fixture

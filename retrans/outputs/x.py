@@ -23,6 +23,8 @@ from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlparse
 
+from retrans.outbound import INDEX_NAME
+
 from retrans.config import X_BEARER_ENV, redact
 from retrans.ingest import NotLiveError
 from retrans.sources import resolve_page
@@ -59,9 +61,58 @@ def join_rtmp_destination(rtmp_url: str, rtmp_key: str) -> str:
     return url + "/" + key
 
 
-def build_ffmpeg_restream_cmd(stream_url: str, destination: str) -> list[str]:
-    """H.264 + AAC into FLV for Media Studio. Not HEVC."""
-    return [
+# Encode lock: 1080p / 9 Mbps / 30 fps / 128k AAC. One encode, then mux.
+_ENCODE_LOCK = (
+    "-c:v",
+    "libx264",
+    "-preset",
+    "veryfast",
+    "-tune",
+    "zerolatency",
+    "-vf",
+    "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
+    "-r",
+    "30",
+    "-b:v",
+    "9M",
+    "-maxrate",
+    "9M",
+    "-bufsize",
+    "18M",
+    "-pix_fmt",
+    "yuv420p",
+    "-c:a",
+    "aac",
+    "-ar",
+    "44100",
+    "-ac",
+    "2",
+    "-b:a",
+    "128k",
+)
+
+
+def escape_tee_sink(url: str) -> str:
+    """Escape ffmpeg tee muxer special characters in a sink URL or path."""
+    out: list[str] = []
+    for char in url:
+        if char in "\\:|[]":
+            out.append("\\")
+        out.append(char)
+    return "".join(out)
+
+
+def build_ffmpeg_restream_cmd(
+    stream_url: str,
+    destination: str,
+    preview_m3u8: str | None = None,
+) -> list[str]:
+    """H.264 + AAC. FLV to Media Studio; optional tee to local HLS fMP4.
+
+    destination must already be join_rtmp_destination (app + playpath).
+    When preview_m3u8 is set: one encode, two sinks (RTMP + local playlist).
+    """
+    cmd = [
         "ffmpeg",
         "-hide_banner",
         "-loglevel",
@@ -69,39 +120,32 @@ def build_ffmpeg_restream_cmd(stream_url: str, destination: str) -> list[str]:
         "-re",
         "-i",
         stream_url,
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-tune",
-        "zerolatency",
-        "-vf",
-        "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2",
-        "-r",
-        "30",
-        "-b:v",
-        "9M",
-        "-maxrate",
-        "9M",
-        "-bufsize",
-        "18M",
-        "-pix_fmt",
-        "yuv420p",
-        "-c:a",
-        "aac",
-        "-ar",
-        "44100",
-        "-ac",
-        "2",
-        "-b:a",
-        "128k",
-        # Live RTMPS cannot seek; skip FLV duration/filesize header rewrite.
-        "-flvflags",
-        "no_duration_filesize",
-        "-f",
-        "flv",
-        destination,
+        *_ENCODE_LOCK,
     ]
+    if preview_m3u8:
+        rtmp_sink = escape_tee_sink(destination)
+        hls_sink = escape_tee_sink(preview_m3u8)
+        # flvflags on the RTMP sink only — same no-seek header as -f flv.
+        tee_spec = (
+            f"[f=flv:flvflags=no_duration_filesize]{rtmp_sink}"
+            f"|[f=hls:onfail=ignore:hls_time=1:hls_list_size=10:"
+            f"hls_flags=delete_segments+independent_segments:"
+            f"hls_segment_type=fmp4:hls_fmp4_init_filename=init.mp4]"
+            f"{hls_sink}"
+        )
+        # tee requires an explicit map or ffmpeg reports "does not contain any stream".
+        cmd.extend(["-map", "0", "-f", "tee", "-use_fifo", "1", tee_spec])
+        return cmd
+    cmd.extend(
+        [
+            "-flvflags",
+            "no_duration_filesize",
+            "-f",
+            "flv",
+            destination,
+        ]
+    )
+    return cmd
 
 
 _OUTPUT_OPEN_IO = "error opening output files: input/output error"
@@ -151,6 +195,7 @@ class XLiveRestream:
         rtmp_key: str,
         *,
         require_live: bool = True,
+        preview_dir: str | None = None,
     ) -> None:
         """Resolve + spawn ffmpeg. Returns once the process is running.
 
@@ -183,7 +228,14 @@ class XLiveRestream:
                         "source is not a live stream (VOD / not live)"
                     )
                 stream_url = resolved.stream_url
-            cmd = build_ffmpeg_restream_cmd(stream_url, dest)
+            preview_m3u8 = None
+            if preview_dir:
+                out = Path(preview_dir)
+                out.mkdir(parents=True, exist_ok=True)
+                preview_m3u8 = str(out / INDEX_NAME)
+            cmd = build_ffmpeg_restream_cmd(
+                stream_url, dest, preview_m3u8=preview_m3u8
+            )
             self._proc = self._popen(
                 cmd,
                 stdin=subprocess.DEVNULL,
