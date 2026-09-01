@@ -25,6 +25,7 @@ const ready = {
   configured: true,
   ack: true,
   state: "idle",
+  selectedKeyId: "key-a",
 };
 
 describe("preview 502 chrome (primary-flow.md)", () => {

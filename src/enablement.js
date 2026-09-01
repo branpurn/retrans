@@ -21,12 +21,16 @@ export function backendFromResult(result) {
   return typeof result.state === "string" && result.state ? result.state : "error";
 }
 
-export function canContinue({ previewOk, configured, ack }) {
-  return Boolean(previewOk && configured && ack);
+export function canContinue({ previewOk, configured, ack, selectedKeyId }) {
+  const dest = selectedKeyId != null ? Boolean(selectedKeyId) : Boolean(configured);
+  return Boolean(previewOk && dest && ack);
 }
 
-export function canStart({ previewOk, configured, ack, state }) {
-  return Boolean(canContinue({ previewOk, configured, ack }) && !LIVE_STATES.has(state));
+export function canStart({ previewOk, configured, ack, state, selectedKeyId, selectedBusy }) {
+  const destOk = canContinue({ previewOk, configured, ack, selectedKeyId });
+  if (selectedBusy) return false;
+  if (selectedKeyId) return destOk;
+  return Boolean(destOk && !LIVE_STATES.has(state));
 }
 
 export function canStop({ state }) {

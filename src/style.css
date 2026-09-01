@@ -114,6 +114,11 @@ body {
   font-weight: 600;
 }
 
+#signin-title {
+  display: flex;
+  align-items: center;
+}
+
 .field-label {
   color: var(--muted);
 }
@@ -125,7 +130,8 @@ body {
 }
 
 input[type="text"],
-input[type="password"] {
+input[type="password"],
+select {
   height: 32px;
   padding: 0 12px;
   border: 1px solid var(--line);
@@ -283,4 +289,83 @@ button:disabled {
 
 .change-dest:hover {
   color: var(--ink);
+}
+
+.help-q {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 8px;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--line);
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.title .help-q {
+  vertical-align: middle;
+}
+
+.help-panel {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+
+.help-steps {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
+.help-steps li + li {
+  margin-top: 6px;
+}
+
+details {
+  color: var(--muted);
+}
+
+details summary {
+  cursor: pointer;
+}
+
+details[open] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+.key-list,
+.session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.key-list li,
+.session-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.key-list .key-name,
+.session-list .sess-name,
+.session-list .sess-source {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.session-list .pill {
+  flex: 0 0 auto;
 }

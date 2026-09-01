@@ -18,14 +18,14 @@ describe("retransApi lock", () => {
     assert.match(src, /\/api\/live\/start/);
     assert.match(src, /\/api\/live\/stop/);
     assert.match(src, /\/api\/live\/status/);
-    assert.match(src, /\/api\/live\/credentials/);
+    assert.match(src, /\/api\/live\/keys/);
     assert.match(src, /\/api\/live\/preview/);
     assert.match(src, /source_url/);
-    assert.match(src, /rtmp_url/);
-    assert.match(src, /rtmp_key/);
+    assert.match(src, /key_id/);
     assert.match(src, /method:\s*["']PUT["']/);
     assert.match(src, /method:\s*["']DELETE["']/);
     assert.doesNotMatch(src, /\/api\/clip/);
+    assert.doesNotMatch(src, /\/api\/live\/credentials/);
   });
 
   it("operator is 8788 same-origin /api; Vite 5173 is not the operator path", () => {
@@ -35,12 +35,12 @@ describe("retransApi lock", () => {
     assert.match(src, /const START = "\/api\/live\/start"/);
     assert.match(src, /const STOP = "\/api\/live\/stop"/);
     assert.match(src, /const STATUS = "\/api\/live\/status"/);
-    assert.match(src, /const CREDENTIALS = "\/api\/live\/credentials"/);
+    assert.match(src, /const KEYS = "\/api\/live\/keys"/);
     assert.match(src, /const PREVIEW = "\/api\/live\/preview"/);
     assert.match(src, /fetch\(START/);
     assert.match(src, /fetch\(STOP/);
     assert.match(src, /fetch\(STATUS/);
-    assert.match(src, /fetch\(CREDENTIALS/);
+    assert.match(src, /fetch\(KEYS/);
     assert.match(src, /fetch\(`\$\{PREVIEW\}\?\$\{qs\}`/);
     assert.doesNotMatch(src, /http:\/\/127\.0\.0\.1:5173/);
     assert.doesNotMatch(src, /http:\/\/127\.0\.0\.1:8788\/api/);
@@ -56,10 +56,17 @@ describe("retransApi lock", () => {
     assert.doesNotMatch(readme, /open the Vite URL/);
   });
 
+  it("start body is source_url + key_id only; stop is session_id or key_id", () => {
+    assert.match(src, /const body = \{ source_url, key_id \}/);
+    assert.doesNotMatch(src, /body\.rtmp_url/);
+    assert.doesNotMatch(src, /body\.rtmp_key/);
+    assert.match(src, /body\.session_id/);
+    assert.match(src, /body\.key_id/);
+  });
+
   it("shell does not clip helpers with overflow:hidden", () => {
     assert.doesNotMatch(css, /html,\s*body\s*\{[^}]*overflow:\s*hidden/s);
     assert.doesNotMatch(css, /#app\s*\{[^}]*overflow:\s*hidden/s);
     assert.doesNotMatch(css, /\.body\s*\{[^}]*overflow:\s*hidden/s);
   });
 });
-
