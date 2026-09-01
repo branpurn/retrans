@@ -34,7 +34,7 @@ export function pillFor({ previewOk, state }) {
   if (state === "live") return "live";
   if (state === "error") return "error";
   if (state === "stopped") return "stopped";
-  if (state === "starting") return "preview";
+  if (state === "starting") return "starting";
   if (previewOk) return "preview";
   return "idle";
 }
@@ -43,6 +43,8 @@ export function pillLabel(status) {
   switch (status) {
     case "preview":
       return "Preview";
+    case "starting":
+      return "Starting";
     case "live":
       return "LIVE";
     case "stopped":

@@ -46,7 +46,8 @@ describe("enablement", () => {
   it("pills stay in the locked set", () => {
     assert.equal(pillLabel(pillFor({ previewOk: false, state: "idle" })), "Idle");
     assert.equal(pillLabel(pillFor({ previewOk: true, state: "idle" })), "Preview");
-    assert.equal(pillLabel(pillFor({ previewOk: true, state: "starting" })), "Preview");
+    assert.equal(pillLabel(pillFor({ previewOk: true, state: "starting" })), "Starting");
+    assert.equal(pillFor({ previewOk: true, state: "starting" }), "starting");
     assert.equal(pillLabel(pillFor({ previewOk: true, state: "live" })), "LIVE");
     assert.equal(pillLabel(pillFor({ previewOk: true, state: "stopped" })), "Stopped");
     assert.equal(pillLabel(pillFor({ previewOk: true, state: "error" })), "Error");
