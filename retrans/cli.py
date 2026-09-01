@@ -134,7 +134,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
             flush=True,
         )
         print(
-            "  GET /  PUT/GET/DELETE /api/live/credentials  "
+            "  GET /  GET/PUT /api/live/keys  DELETE /api/live/keys/<id>  "
+            "PUT/GET/DELETE /api/live/credentials  "
             "POST /api/live/start  GET /api/live/status  POST /api/live/stop",
             flush=True,
         )

@@ -185,6 +185,7 @@ def test_status_idle(api_factory):
         "state": "idle",
         "source_url": None,
         "error": None,
+        "sessions": [],
     }
     assert "rtmp_key" not in data
     assert "rtmp_url" not in data

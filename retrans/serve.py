@@ -5,9 +5,10 @@ LAN / hotspot address) is refused with a non-zero exit. When Vite dist/
 is present, GET / and assets are served from that directory (same origin
 as /api). Responses never echo rtmp_url or rtmp_key. There is no /api/clip route.
 
-Sign in: PUT /api/live/credentials (or env). Drop link: source_url.
-Preview: GET /api/live/preview?source_url= (yt-dlp -J title + is_live; no ffmpeg).
-Retrans: POST /api/live/start (fills RTMP from store when body omits it).
+Named keys: GET/PUT /api/live/keys, DELETE /api/live/keys/<id> (0600 local file).
+Retrans: POST /api/live/start {source_url, key_id} — concurrent workers; 409 per key_id.
+Stop: POST /api/live/stop {session_id} or {key_id}. Status: GET /api/live/status {sessions:[]}.
+Legacy GET/PUT/DELETE /api/live/credentials and body RTMP override remain.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import os
 import socket
 import socketserver
 import threading
+import uuid
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -31,6 +33,13 @@ from retrans.credentials import (
     is_configured,
     load_credentials,
     save_credentials,
+)
+from retrans.keys import (
+    delete_key,
+    get_key,
+    list_keys_public,
+    upsert_key,
+    validate_key_payload,
 )
 from retrans.ingest import NotLiveError, ResolveError, StreamResolver
 from retrans.outputs.x import RestreamError, XLiveRestream, join_rtmp_destination
@@ -289,6 +298,75 @@ class LiveController:
                 self._error = redact(str(exc), rtmp_url, rtmp_key, dest)
 
 
+class SessionHub:
+    """Concurrent live sessions keyed by named key_id. 409 only when that key is busy."""
+
+    def __init__(self, restream_factory: Callable[[], XLiveRestream] | None = None) -> None:
+        self._factory = restream_factory or XLiveRestream
+        self._lock = threading.Lock()
+        self._by_key: dict[str, dict[str, Any]] = {}
+        self._by_session: dict[str, dict[str, Any]] = {}
+
+    def _entry_public(self, entry: dict[str, Any]) -> dict[str, Any]:
+        status = entry["controller"].public_status()
+        return {
+            "session_id": entry["session_id"],
+            "key_id": entry["key_id"],
+            "name": entry["name"],
+            "source_url": status.get("source_url"),
+            "state": status.get("state"),
+            "error": status.get("error"),
+        }
+
+    def sessions_public(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return [self._entry_public(entry) for entry in self._by_key.values()]
+
+    def start(self, source_url: str, key_id: str, name: str, rtmp_url: str, rtmp_key: str) -> dict[str, Any]:
+        with self._lock:
+            entry = self._by_key.get(key_id)
+            if entry is not None:
+                if entry["controller"].busy:
+                    raise AlreadyRunning("already running")
+                entry["name"] = name
+                state = entry["controller"].start(source_url, rtmp_url, rtmp_key)
+                return {
+                    "session_id": entry["session_id"],
+                    "key_id": key_id,
+                    "state": state,
+                }
+            controller = LiveController(self._factory)
+            session_id = uuid.uuid4().hex[:12]
+            entry = {
+                "session_id": session_id,
+                "key_id": key_id,
+                "name": name,
+                "controller": controller,
+            }
+            self._by_key[key_id] = entry
+            self._by_session[session_id] = entry
+            state = controller.start(source_url, rtmp_url, rtmp_key)
+            return {"session_id": session_id, "key_id": key_id, "state": state}
+
+    def stop(self, session_id: str | None = None, key_id: str | None = None) -> str:
+        with self._lock:
+            entry = None
+            if session_id:
+                entry = self._by_session.get(session_id)
+            elif key_id:
+                entry = self._by_key.get(key_id)
+            if entry is None:
+                return "stopped"
+            controller = entry["controller"]
+        controller.stop()
+        return "stopped"
+
+    def busy_for(self, key_id: str) -> bool:
+        with self._lock:
+            entry = self._by_key.get(key_id)
+            return bool(entry is not None and entry["controller"].busy)
+
+
 def _nonempty_str(payload: dict[str, Any], key: str) -> str | None:
     raw = payload.get(key)
     if not isinstance(raw, str) or not raw.strip():
@@ -393,11 +471,22 @@ def _cors_origin(handler: BaseHTTPRequestHandler) -> str | None:
     return origin
 
 
+def _keys_id_from_path(path: str) -> str | None:
+    prefix = "/api/live/keys/"
+    if not path.startswith(prefix):
+        return None
+    key_id = path[len(prefix) :]
+    if not key_id or "/" in key_id:
+        return None
+    return key_id
+
+
 def make_handler(
     controller: LiveController,
     resolver: StreamResolver | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     stream_resolver = resolver or StreamResolver()
+    hub = SessionHub(getattr(controller, "_factory", None))
 
     class LiveAPIHandler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: object) -> None:
@@ -462,11 +551,16 @@ def make_handler(
             if path == "/api/live/credentials":
                 self._send(200, {"ok": True, "configured": is_configured()})
                 return
+            if path == "/api/live/keys":
+                self._send(200, {"ok": True, "keys": list_keys_public()})
+                return
             if path == "/api/live/preview":
                 self._preview()
                 return
             if path == "/api/live/status":
-                self._send(200, controller.public_status())
+                status = controller.public_status()
+                status["sessions"] = hub.sessions_public()
+                self._send(200, status)
                 return
             if path.startswith("/api/"):
                 self._send(404, {"ok": False, "error": "not found"})
@@ -506,6 +600,9 @@ def make_handler(
 
         def do_PUT(self) -> None:
             path = self.path.split("?", 1)[0]
+            if path == "/api/live/keys":
+                self._put_key()
+                return
             if path != "/api/live/credentials":
                 self._send(404, {"ok": False, "error": "not found"})
                 return
@@ -521,8 +618,32 @@ def make_handler(
             save_credentials(rtmp_url, rtmp_key)
             self._send(200, {"ok": True, "configured": True})
 
+        def _put_key(self) -> None:
+            payload, err = self._read_json()
+            if err:
+                self._send(400, {"ok": False, "error": err})
+                return
+            parsed = validate_key_payload(payload)
+            if isinstance(parsed, str):
+                self._send(400, {"ok": False, "error": parsed})
+                return
+            public = upsert_key(
+                name=parsed["name"],
+                rtmp_key=parsed["rtmp_key"],
+                key_id=parsed.get("id"),
+                rtmp_url=parsed.get("rtmp_url"),
+            )
+            self._send(200, {"ok": True, **public})
+
         def do_DELETE(self) -> None:
             path = self.path.split("?", 1)[0]
+            key_id = _keys_id_from_path(path)
+            if key_id is not None:
+                if not delete_key(key_id):
+                    self._send(404, {"ok": False, "error": "not found"})
+                    return
+                self._send(200, {"ok": True})
+                return
             if path != "/api/live/credentials":
                 self._send(404, {"ok": False, "error": "not found"})
                 return
@@ -532,8 +653,7 @@ def make_handler(
         def do_POST(self) -> None:
             path = self.path.split("?", 1)[0]
             if path == "/api/live/stop":
-                state = controller.stop()
-                self._send(200, {"ok": True, "state": state})
+                self._stop()
                 return
             if path != "/api/live/start":
                 self._send(404, {"ok": False, "error": "not found"})
@@ -541,6 +661,9 @@ def make_handler(
             payload, err = self._read_json()
             if err:
                 self._send(400, {"ok": False, "error": err})
+                return
+            if isinstance(payload, dict) and _nonempty_str(payload, "key_id"):
+                self._start_named(payload)
                 return
             parsed = validate_start_payload(payload, stored=load_credentials())
             if isinstance(parsed, str):
@@ -566,6 +689,72 @@ def make_handler(
                     },
                 )
                 return
+            self._send(200, {"ok": True, "state": state})
+
+        def _start_named(self, payload: dict[str, Any]) -> None:
+            key_id = _nonempty_str(payload, "key_id")
+            if key_id is None:
+                self._send(400, {"ok": False, "error": "invalid fields: key_id"})
+                return
+            if "source_url" not in payload:
+                self._send(400, {"ok": False, "error": "missing fields: source_url"})
+                return
+            source_url = validate_source_url(payload)
+            if source_url is None:
+                self._send(400, {"ok": False, "error": "invalid fields: source_url"})
+                return
+            record = get_key(key_id)
+            if record is None:
+                self._send(400, {"ok": False, "error": "unknown key_id"})
+                return
+            try:
+                stream_resolver.require_live(source_url)
+            except (NotLiveError, ResolveError) as exc:
+                self._send(400, {"ok": False, "error": str(exc)})
+                return
+            try:
+                started = hub.start(
+                    source_url,
+                    record["id"],
+                    record["name"],
+                    record["rtmp_url"],
+                    record["rtmp_key"],
+                )
+            except AlreadyRunning:
+                self._send(
+                    409,
+                    {
+                        "ok": False,
+                        "error": "already running",
+                        "key_id": record["id"],
+                    },
+                )
+                return
+            self._send(
+                200,
+                {
+                    "ok": True,
+                    "state": started["state"],
+                    "session_id": started["session_id"],
+                    "key_id": started["key_id"],
+                },
+            )
+
+        def _stop(self) -> None:
+            payload, err = self._read_json()
+            if err:
+                self._send(400, {"ok": False, "error": err})
+                return
+            session_id = None
+            key_id = None
+            if isinstance(payload, dict):
+                session_id = _nonempty_str(payload, "session_id")
+                key_id = _nonempty_str(payload, "key_id")
+            if session_id or key_id:
+                state = hub.stop(session_id=session_id, key_id=key_id)
+                self._send(200, {"ok": True, "state": state})
+                return
+            state = controller.stop()
             self._send(200, {"ok": True, "state": state})
 
     return LiveAPIHandler
