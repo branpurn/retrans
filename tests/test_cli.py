@@ -49,22 +49,17 @@ def test_serve_refuses_cli_wildcard(capsys):
 def test_live_help_is_product_command():
     parser = cli._parser()
     live = None
-    for action in parser._subparsers._group_actions:
-        live = action.choices.get("live")
-        if live:
-            break
-    assert live is not None
-    assert "product" in (live.description or live.help or "").lower() or "restream" in (
-        live.help or ""
-    ).lower()
     clip = None
     for action in parser._subparsers._group_actions:
-        clip = action.choices.get("clip")
-        if clip:
-            break
-    text = ((clip.help or "") + " " + (clip.description or "")).lower()
-    assert "debug" in text
-    assert "not the product" in text
+        live = live or action.choices.get("live")
+        clip = clip or action.choices.get("clip")
+    assert live is not None
+    help_text = parser.format_help().lower()
+    assert "product" in help_text or "restream" in help_text
+    assert clip is not None
+    clip_text = clip.format_help().lower()
+    assert "debug" in clip_text
+    assert "not the product" in clip_text
 
 
 def test_cmd_serve_maps_bind_refused(monkeypatch):
