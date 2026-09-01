@@ -23,6 +23,9 @@ const els = {
   previewHost: document.getElementById("preview-host"),
   rtmpUrl: document.getElementById("rtmp_url"),
   rtmpKey: document.getElementById("rtmp_key"),
+  signInBtn: document.getElementById("signin-btn"),
+  clearCredsBtn: document.getElementById("clear-creds-btn"),
+  signInStatus: document.getElementById("signin-status"),
   ack: document.getElementById("ack"),
   startBtn: document.getElementById("start-btn"),
   stopBtn: document.getElementById("stop-btn"),
@@ -35,6 +38,8 @@ const state = {
   parsed: null,
   backend: "idle",
   error: "",
+  configured: false,
+  signInError: "",
 };
 
 let pollTimer = null;
@@ -85,10 +90,16 @@ function render() {
   els.pill.dataset.status = status;
   els.pill.textContent = pillLabel(status);
 
+  els.signInStatus.textContent = state.signInError
+    ? state.signInError
+    : state.configured
+      ? "Signed in (env or local store). Drop a link, then Retrans."
+      : "Save Media Studio RTMP URL + key once, or set env.";
   els.startBtn.disabled = !canStart({
     previewOk: state.previewOk,
     rtmpUrl: els.rtmpUrl.value,
     rtmpKey: els.rtmpKey.value,
+    configured: state.configured,
     ack: els.ack.checked,
     state: state.backend,
   });
@@ -192,6 +203,7 @@ els.startBtn.addEventListener("click", async () => {
       previewOk: state.previewOk,
       rtmpUrl: els.rtmpUrl.value,
       rtmpKey: els.rtmpKey.value,
+      configured: state.configured,
       ack: els.ack.checked,
       state: state.backend,
     })
@@ -200,11 +212,14 @@ els.startBtn.addEventListener("click", async () => {
   }
   els.startBtn.disabled = true;
   try {
-    const result = await retransApi.start({
-      source_url: els.source.value.trim(),
-      rtmp_url: els.rtmpUrl.value.trim(),
-      rtmp_key: els.rtmpKey.value,
-    });
+    const overrideUrl = els.rtmpUrl.value.trim();
+    const overrideKey = els.rtmpKey.value;
+    const payload = { source_url: els.source.value.trim() };
+    if (overrideUrl && overrideKey) {
+      payload.rtmp_url = overrideUrl;
+      payload.rtmp_key = overrideKey;
+    }
+    const result = await retransApi.start(payload);
     els.rtmpKey.value = "";
     els.rtmpKey.type = "password";
     applyBackend(result);
@@ -227,13 +242,56 @@ els.stopBtn.addEventListener("click", async () => {
   }
 });
 
+els.signInBtn.addEventListener("click", async () => {
+  const rtmp_url = els.rtmpUrl.value.trim();
+  const rtmp_key = els.rtmpKey.value;
+  if (!rtmp_url || !rtmp_key) {
+    state.signInError = "RTMP URL and stream key are required to sign in";
+    render();
+    return;
+  }
+  els.signInBtn.disabled = true;
+  try {
+    const result = await retransApi.saveCredentials({ rtmp_url, rtmp_key });
+    state.configured = Boolean(result.configured);
+    els.rtmpKey.value = "";
+    els.rtmpKey.type = "password";
+    state.signInError = result.ok ? "" : result.error || "sign-in failed";
+  } catch {
+    state.signInError = "sign-in failed";
+  } finally {
+    els.signInBtn.disabled = false;
+    render();
+  }
+});
+
+els.clearCredsBtn.addEventListener("click", async () => {
+  els.clearCredsBtn.disabled = true;
+  try {
+    const result = await retransApi.clearCredentials();
+    state.configured = Boolean(result.configured);
+  } catch {
+    /* keep current configured flag */
+  } finally {
+    els.clearCredsBtn.disabled = false;
+    render();
+  }
+});
+
 async function boot() {
   render();
+  try {
+    const creds = await retransApi.credentials();
+    if (creds.httpStatus === 200) state.configured = Boolean(creds.configured);
+  } catch {
+    /* boot credentials failure: dest fields still work as one-shot */
+  }
   try {
     applyStatus(await retransApi.status());
   } catch {
     /* boot status failure: stay Idle; keep idle transport helper */
   }
+  render();
 }
 
 boot();

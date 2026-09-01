@@ -25,7 +25,7 @@ const ready = {
 };
 
 describe("enablement", () => {
-  it("Start needs preview, dest, ack, and not LIVE", () => {
+  it("Start needs preview, dest or stored creds, ack, and not LIVE", () => {
     assert.equal(canStart(ready), true);
     assert.equal(canStart({ ...ready, previewOk: false }), false);
     assert.equal(canStart({ ...ready, rtmpUrl: "" }), false);
@@ -33,6 +33,28 @@ describe("enablement", () => {
     assert.equal(canStart({ ...ready, ack: false }), false);
     assert.equal(canStart({ ...ready, state: "live" }), false);
     assert.equal(canStart({ ...ready, state: "starting" }), false);
+    assert.equal(
+      canStart({
+        previewOk: true,
+        rtmpUrl: "",
+        rtmpKey: "",
+        configured: true,
+        ack: true,
+        state: "idle",
+      }),
+      true,
+    );
+    assert.equal(
+      canStart({
+        previewOk: true,
+        rtmpUrl: "",
+        rtmpKey: "",
+        configured: false,
+        ack: true,
+        state: "idle",
+      }),
+      false,
+    );
   });
 
   it("Stop only when LIVE", () => {

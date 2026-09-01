@@ -21,8 +21,10 @@ export function backendFromResult(result) {
   return typeof result.state === "string" && result.state ? result.state : "error";
 }
 
-export function canStart({ previewOk, rtmpUrl, rtmpKey, ack, state }) {
-  const destOk = Boolean(String(rtmpUrl ?? "").trim() && String(rtmpKey ?? ""));
+export function canStart({ previewOk, rtmpUrl, rtmpKey, configured, ack, state }) {
+  const destOk =
+    Boolean(configured) ||
+    Boolean(String(rtmpUrl ?? "").trim() && String(rtmpKey ?? ""));
   return Boolean(previewOk && destOk && ack && !LIVE_STATES.has(state));
 }
 

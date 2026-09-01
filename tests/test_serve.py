@@ -100,6 +100,14 @@ def _live_resolver(status: str = "is_live", calls: list | None = None) -> Stream
     return StreamResolver(run=_ytdlp_print_run(status, calls=calls))
 
 
+@pytest.fixture(autouse=True)
+def isolate_credentials(tmp_path, monkeypatch):
+    """Every serve test uses a temp XDG store and no process env secrets."""
+    monkeypatch.delenv("RETRANS_X_RTMP_URL", raising=False)
+    monkeypatch.delenv("RETRANS_X_RTMP_KEY", raising=False)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+
 @pytest.fixture
 def api_factory():
     servers = []
@@ -217,10 +225,14 @@ def test_start_stop_and_status_never_echo_secrets(api_factory):
 
 def test_start_missing_fields_400(api_factory):
     port = api_factory(LiveController(restream_factory=ImmediateLive))
-    status, data, _ = _req(port, "POST", "/api/live/start", {"source_url": SOURCE})
+    status, data, raw = _req(port, "POST", "/api/live/start", {"source_url": SOURCE})
     assert status == 400
     assert data["ok"] is False
-    assert "missing" in data["error"]
+    assert "not configured" in data["error"].lower()
+    assert SECRET_KEY not in raw
+    assert SECRET_URL not in raw
+    assert "rtmp_key" not in data
+    assert "rtmp_url" not in data
 
 
 def test_start_invalid_source_400(api_factory):
@@ -368,10 +380,12 @@ def test_start_validates_fields_before_live_probe(api_factory):
         LiveController(restream_factory=MustNotStart),
         resolver=StreamResolver(run=run),
     )
-    code, data, _ = _req(port, "POST", "/api/live/start", {"source_url": SOURCE})
+    code, data, raw = _req(port, "POST", "/api/live/start", {"source_url": SOURCE})
     assert code == 400
     assert data["ok"] is False
-    assert "missing" in data["error"]
+    assert "not configured" in data["error"].lower()
+    assert SECRET_KEY not in raw
+    assert SECRET_URL not in raw
     assert calls == []
 
 

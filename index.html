@@ -14,7 +14,7 @@
 
       <main class="body">
         <section class="block" aria-labelledby="paste-label">
-          <label id="paste-label" class="title" for="source_url">Source URL</label>
+          <label id="paste-label" class="title" for="source_url">Drop link</label>
           <div class="row">
             <input
               id="source_url"
@@ -44,7 +44,8 @@
         </section>
 
         <section class="block" aria-labelledby="dest-title">
-          <h2 id="dest-title" class="title">Media Studio RTMP</h2>
+          <h2 id="dest-title" class="title">Sign in</h2>
+          <p id="signin-status" class="helper">Save Media Studio RTMP URL + key once, or set env.</p>
           <label class="field-label" for="rtmp_url">RTMP URL</label>
           <input
             id="rtmp_url"
@@ -61,9 +62,13 @@
             spellcheck="false"
             autocomplete="new-password"
           />
-          <p class="helper">From X Media Studio</p>
+          <div class="row">
+            <button id="signin-btn" type="button">Sign in</button>
+            <button id="clear-creds-btn" type="button">Clear saved</button>
+          </div>
+          <p class="helper">From X Media Studio. Stored locally (0600). No X OAuth.</p>
           <p class="helper">
-            After Start, still Create Broadcast + Go Live in Media Studio. RETRANS
+            After Retrans, still Create Broadcast + Go Live in Media Studio. RETRANS
             sends the live restream; there is no public API to start the broadcast.
           </p>
         </section>
@@ -80,7 +85,7 @@
           <h2 id="transport-title" class="title">Transport</h2>
           <div class="row">
             <button id="start-btn" class="btn-start" type="button" disabled>
-              Start live retrans
+              Retrans
             </button>
             <button id="stop-btn" class="btn-stop" type="button" disabled>Stop</button>
           </div>
