@@ -14,12 +14,17 @@
 #   docker rm -f retrans
 #   docker pull ghcr.io/branpurn/retrans:latest
 #   docker run --rm --init -p 127.0.0.1:8788:8788 IMAGE retrans serve
-# Live worker (keyed): `docker compose --profile live up` (no host bind).
+# Live / headless worker (keyed): `docker compose --profile live up` or
+#   `docker compose --profile headless up -d` (same service, no host bind).
+#   Loopback profile does not start this worker.
 #   No keys → entrypoint idles (does not start ffmpeg). No container_name so
 #   more than one keyed worker can run.
+# Headless docker run (no -p, not --network host; halt with docker stop):
+#   docker pull ghcr.io/branpurn/retrans:latest
+#   docker run --init --env-file .env --name retrans-headless IMAGE
 services:
   retrans:
-    profiles: ["live"]
+    profiles: ["live", "headless"]
     image: ghcr.io/branpurn/retrans:${RETRANS_IMAGE_TAG:-latest}
     build: .
     env_file:
