@@ -4,7 +4,8 @@
  * Never fetch an absolute :5173 or :8788 API URL.
  *
  * GET    /api/live/keys → 200 { keys: [{id,name}] }  never secrets
- * PUT    /api/live/keys {name?, rtmp_key, rtmp_url?} → 200 {id,name}
+ * PUT    /api/live/keys {id?, name, rtmp_key, rtmp_url?} → 200 {id,name}
+ *        id present = edit; name + rtmp_key required every time (no keep-blank)
  *        omit rtmp_url → default ingest rtmps://va.pscp.tv:443/x
  * DELETE /api/live/keys/<id> → 200
  * GET    /api/live/preview?source_url= → 200 { ok, source_url, title, is_live }
@@ -13,7 +14,7 @@
  * POST   /api/live/stop   { session_id } | { key_id } → 200 { ok, state:"stopped" }
  * GET    /api/live/status → 200 { sessions:[{session_id,key_id,name,source_url,state,error}] }
  *
- * Never log or return rtmp_url / rtmp_key. No clip routes. Sign-in uses named keys only.
+ * Never log or return rtmp_url / rtmp_key. No clip routes. Keys panel uses named keys only.
  */
 
 const START = "/api/live/start";
@@ -153,9 +154,9 @@ export async function listKeys() {
   return publicKey(data, res.status);
 }
 
-export async function saveKey({ name, rtmp_key, rtmp_url }) {
-  const payload = { rtmp_key };
-  if (name) payload.name = name;
+export async function saveKey({ id, name, rtmp_key, rtmp_url }) {
+  const payload = { name, rtmp_key };
+  if (id) payload.id = id;
   if (rtmp_url) payload.rtmp_url = rtmp_url;
   const res = await fetch(KEYS, {
     method: "PUT",
@@ -166,7 +167,7 @@ export async function saveKey({ name, rtmp_key, rtmp_url }) {
   const data = await readBody(res);
   let error = typeof data.error === "string" ? data.error : "";
   if (error) error = redactSecrets(error, [rtmp_key, rtmp_url]);
-  if (!res.ok && !error) error = "sign-in failed";
+  if (!res.ok && !error) error = "save failed";
   return publicKey(data, res.status, error);
 }
 

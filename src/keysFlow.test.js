@@ -3,11 +3,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   DEFAULT_INGEST,
-  SIGNIN_HELPER,
+  KEYS_HELPER,
   applyDeleteKey,
   applyKeysBoot,
   applyKeysPoll,
   applySaveSuccess,
+  applySelectKey,
+  applyStartEdit,
   defaultKeyName,
   mergeOptimisticKey,
   putKeyBody,
@@ -20,10 +22,11 @@ describe("first Save sticks on Beat 2", () => {
     chrome = applySaveSuccess(chrome, { id: "key-a", name: "Studio A" }, { adding: false });
     assert.equal(chrome.beat, 2);
     assert.equal(chrome.justSaved, true);
+    assert.equal(chrome.selectedKeyId, "key-a");
     assert.deepEqual(chrome.keys, [{ id: "key-a", name: "Studio A", in_use: false }]);
   });
 
-  it("later empty GET keys / slow poll does not snap back to Sign in", () => {
+  it("later empty GET keys / slow poll does not snap back to Keys panel", () => {
     let chrome = applySaveSuccess(
       { beat: 1, keys: [], justSaved: false, adding: false },
       { id: "key-a", name: "Studio A" },
@@ -78,13 +81,27 @@ describe("first Save sticks on Beat 2", () => {
     assert.equal(afterDelete.justSaved, false);
   });
 
-  it("boot with any named key skips to Beat 2", () => {
+  it("boot with any named key stays Beat 1 so the list can Open/Edit/Select", () => {
     const chrome = applyKeysBoot({
       httpStatus: 200,
       keys: [{ id: "key-a", name: "Studio A" }],
     });
-    assert.equal(chrome.beat, 2);
+    assert.equal(chrome.beat, 1);
     assert.equal(chrome.keys[0].name, "Studio A");
+  });
+
+  it("Select sets key_id and goes to Beat 2; Open/Edit stays Beat 1", () => {
+    const base = {
+      beat: 1,
+      keys: [{ id: "key-a", name: "Studio A", in_use: false }],
+      justSaved: false,
+    };
+    const selected = applySelectKey(base, "key-a");
+    assert.equal(selected.beat, 2);
+    assert.equal(selected.selectedKeyId, "key-a");
+    const editing = applyStartEdit(base, "key-a");
+    assert.equal(editing.beat, 1);
+    assert.equal(editing.editingId, "key-a");
   });
 });
 
@@ -124,6 +141,17 @@ describe("named keys helpers", () => {
       keys: [],
     });
     assert.equal(override.rtmp_url, "rtmp://placeholder.example/live");
+    const edited = putKeyBody({
+      id: "key-a",
+      name: "Studio A2",
+      rtmp_key: "placeholder-stream-key-bbb",
+      rtmp_url: "",
+      keys: [{ id: "key-a", name: "Studio A" }],
+    });
+    assert.equal(edited.id, "key-a");
+    assert.equal(edited.name, "Studio A2");
+    assert.equal(edited.rtmp_key, "placeholder-stream-key-bbb");
+    assert.equal("rtmp_url" in edited, false);
   });
 
   it("mergeOptimisticKey never stores a secret field", () => {
@@ -153,7 +181,13 @@ describe("first-save wiring lock", () => {
     assert.doesNotMatch(main, /\/api\/live\/credentials/);
     assert.doesNotMatch(api, /\/api\/live\/credentials/);
     assert.doesNotMatch(html, /\/api\/live\/credentials/);
-    assert.match(html, /Save Media Studio RTMP once\. Not X OAuth\./);
-    assert.equal(SIGNIN_HELPER, "Save Media Studio RTMP once. Not X OAuth.");
+    assert.match(html, /Save a named Media Studio stream key\./);
+    assert.equal(KEYS_HELPER, "Save a named Media Studio stream key.");
+    assert.doesNotMatch(html, /Sign in/);
+    assert.match(main, /textContent = "Select"/);
+    assert.match(main, /textContent = "Open\/Edit"/);
+    assert.match(main, /textContent = "Delete"/);
+    assert.match(main, /id: state\.editingId/);
+    assert.doesNotMatch(main, /leave blank to keep/i);
   });
 });

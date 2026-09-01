@@ -114,7 +114,7 @@ body {
   font-weight: 600;
 }
 
-#signin-title {
+#keys-title {
   display: flex;
   align-items: center;
 }
@@ -354,12 +354,37 @@ details[open] {
 .key-list li,
 .session-list li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   justify-content: space-between;
 }
 
-.key-list .key-name,
+.key-list li.is-selected .key-name {
+  color: var(--accent);
+}
+
+.key-list .key-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  text-decoration: underline;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.key-list .key-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
 .session-list .sess-name,
 .session-list .sess-source {
   min-width: 0;
