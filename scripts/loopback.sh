@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Operator loopback: retrans serve + Vite UI on 127.0.0.1 only.
-# Never binds 0.0.0.0 / LAN / hotspot. No prompts. Fail-hard.
+# Operator loopback: retrans serve on 127.0.0.1:8788 (dist/ + /api, same-origin).
+# Never binds 0.0.0.0 / LAN / hotspot. No Vite operator. No prompts. Fail-hard.
 # Cleans up child processes on exit.
 set -euo pipefail
 
@@ -18,13 +18,17 @@ if ! command -v retrans >/dev/null 2>&1; then
   echo "retrans not on PATH. Install with: pip install -e ." >&2
   exit 1
 fi
-if ! command -v npm >/dev/null 2>&1; then
-  echo "npm not on PATH." >&2
-  exit 1
+
+if [[ ! -f "${ROOT}/dist/index.html" ]]; then
+  if ! command -v npm >/dev/null 2>&1; then
+    echo "dist/ missing and npm not on PATH. Run: npm ci && npm run build" >&2
+    exit 1
+  fi
+  npm ci
+  npm run build
 fi
 
 serve_pid=""
-ui_pid=""
 
 cleanup() {
   trap - EXIT INT TERM HUP
@@ -34,12 +38,6 @@ cleanup() {
     fi
     kill "${serve_pid}" 2>/dev/null || true
   fi
-  if [[ -n "${ui_pid}" ]]; then
-    kill "${ui_pid}" 2>/dev/null || true
-    if command -v pkill >/dev/null 2>&1; then
-      pkill -P "${ui_pid}" 2>/dev/null || true
-    fi
-  fi
   wait 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM HUP
@@ -47,7 +45,7 @@ trap cleanup EXIT INT TERM HUP
 retrans serve &
 serve_pid=$!
 
-# Fail-hard unless serve is on 127.0.0.1:8788. Do not start the UI first.
+# Fail-hard unless serve is on 127.0.0.1:8788.
 serve_up=0
 for ((i = 0; i < 16; i++)); do
   if ! kill -0 "${serve_pid}" 2>/dev/null; then
@@ -66,22 +64,10 @@ for ((i = 0; i < 16; i++)); do
   sleep 0.5
 done
 if [[ "${serve_up}" -ne 1 ]]; then
-  echo "fail-hard: retrans serve is not listening on 127.0.0.1:8788; UI not started" >&2
+  echo "fail-hard: retrans serve is not listening on 127.0.0.1:8788" >&2
   exit 1
 fi
 
-npm run dev &
-ui_pid=$!
-
-# Fail-hard when the first child exits (portable: no wait -n).
-while kill -0 "${serve_pid}" 2>/dev/null && kill -0 "${ui_pid}" 2>/dev/null; do
-  sleep 1
-done
-
-status=1
-if ! kill -0 "${serve_pid}" 2>/dev/null; then
-  wait "${serve_pid}" || status=$?
-else
-  wait "${ui_pid}" || status=$?
-fi
+wait "${serve_pid}"
+status=$?
 exit "${status}"
