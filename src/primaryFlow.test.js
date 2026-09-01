@@ -67,6 +67,8 @@ describe("primary-flow chrome lock", () => {
     assert.match(html, /placeholder="Paste YouTube live URL"/);
     assert.match(html, /id="source_url"[^>]*autocomplete="off"/s);
     assert.doesNotMatch(html, /id="source_url"[^>]*type="url"/s);
+    assert.match(html, /id="add-url-btn"[^>]*>Add</s);
+    assert.match(html, /id="playlist"/);
     assert.match(html, /id="key_id"/);
     assert.match(html, /I have permission or fair use to retransmit this live\./);
     assert.match(html, /id="continue-btn"[^>]*>Continue</s);
@@ -79,22 +81,25 @@ describe("primary-flow chrome lock", () => {
     assert.match(main, /retransApi\.preview\(/);
   });
 
-  it("locks Beat 3 sessions list, start {source_url,key_id}, per-session Stop", () => {
+  it("locks Beat 3 sessions list, start {source_urls,key_id}, per-session Stop", () => {
     const beat3 = html.slice(html.indexOf('id="beat-3"'));
     assert.match(html, /Start live retrans/);
     assert.match(html, /id="stop-btn"[^>]*>Stop</s);
     assert.match(html, /id="session-list"/);
+    assert.match(html, /id="playlist-now"/);
     assert.match(html, /id="drop-another"/);
     assert.match(html, /Idle until ready/);
     assert.match(enablement, /Idle until ready/);
     assert.match(enablement, /Retransmitting live to X/);
-    assert.match(main, /retransApi\.start\(\s*\{\s*source_url:/);
+    assert.match(main, /source_urls = playlistUrls\(state\.playlist/);
+    assert.match(main, /retransApi\.start\(\s*\{\s*source_urls,/);
     assert.match(main, /key_id:\s*state\.selectedKeyId/);
     assert.doesNotMatch(main, /payload\.rtmp_url/);
     assert.doesNotMatch(main, /retransApi\.start\([\s\S]*rtmp_url/);
     assert.doesNotMatch(beat3, /id="rtmp_url"/);
     assert.doesNotMatch(beat3, /id="rtmp_key"/);
     assert.match(main, /retransApi\.stop\(\{\s*session_id:/);
+    assert.match(main, /nowPlayingCopy/);
   });
 
   it("does not paint parseSourceUrl as display before preview API", () => {
@@ -121,14 +126,16 @@ describe("primary-flow chrome lock", () => {
     assert.match(main, /applyPreview\(parsed, result\)/);
   });
 
-  it("Start sends source_url + key_id only; no clip UI; Vite loopback 8788", () => {
+  it("Start sends source_urls[] + key_id; no clip UI; Vite loopback 8788", () => {
     const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
     const api = readFileSync(new URL("./retransApi.js", import.meta.url), "utf8");
     const design = readFileSync(new URL("../design/primary-flow.md", import.meta.url), "utf8");
+    assert.match(main, /playlistUrls\(state\.playlist, readField\(els\.source\)\.trim\(\)\)/);
     assert.match(
       main,
-      /retransApi\.start\(\s*\{\s*source_url:\s*readField\(els\.source\)\.trim\(\)\s*,\s*key_id:\s*state\.selectedKeyId\s*,?\s*\}\s*\)/,
+      /retransApi\.start\(\s*\{\s*source_urls,\s*key_id:\s*state\.selectedKeyId\s*,?\s*\}\s*\)/,
     );
+    assert.match(api, /startBody\(\{ source_url, source_urls, key_id \}\)/);
     assert.doesNotMatch(main, /\/api\/clip/);
     assert.doesNotMatch(html, /\/api\/clip/);
     assert.doesNotMatch(html, /\b[Cc]lip\b/);

@@ -19,6 +19,10 @@ NOT `--network host`. Not 0.0.0.0. Not Vite 5173. Not a git clone.
 
 Drop a live URL → Retrans. You must have permission or fair use.
 
+## Playlist
+
+Ordered YouTube URLs on the same named key (live or VOD). When the current item ends, the next plays. Stop ends the whole playlist.
+
 ## Headless
 
 No UI. No published port. Source URL + stream key. Default ingest `rtmps://va.pscp.tv:443/x` (RTMP URL hidden). Broadcast title is still Media Studio.

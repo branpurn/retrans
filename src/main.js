@@ -15,6 +15,13 @@ import { retransApi } from "./retransApi.js";
 import { YOUTUBE_FIRST_HELPER, isPreviewProbeFail, previewPaint } from "./previewChrome.js";
 import { readField, writeField, writeSourceIfNeeded } from "./fields.js";
 import {
+  addUrl,
+  moveUrl,
+  nowPlayingCopy,
+  playlistUrls,
+  removeAt,
+} from "./playlist.js";
+import {
   KEYS_HELPER,
   aggregateSessions,
   applyDeleteKey,
@@ -36,6 +43,9 @@ const els = {
   beat3: document.getElementById("beat-3"),
   source: document.getElementById("source_url"),
   previewBtn: document.getElementById("preview-btn"),
+  addUrlBtn: document.getElementById("add-url-btn"),
+  playlist: document.getElementById("playlist"),
+  playlistNow: document.getElementById("playlist-now"),
   pasteHelper: document.getElementById("paste-helper"),
   previewCards: document.querySelectorAll("[data-preview]"),
   keyName: document.getElementById("key_name"),
@@ -75,6 +85,8 @@ const state = {
   sessions: [],
   stuckErrors: {},
   keysError: "",
+  playlist: [],
+  selectedPlIndex: -1,
 };
 
 let pollTimer = null;
@@ -228,13 +240,69 @@ function sessionErrorText() {
   return row?.error || state.error || "";
 }
 
+function renderPlaylist() {
+  els.playlist.replaceChildren();
+  state.playlist.forEach((href, index) => {
+    const li = document.createElement("li");
+    if (index === state.selectedPlIndex) li.className = "is-selected";
+    const pick = document.createElement("button");
+    pick.type = "button";
+    pick.className = "pl-url";
+    pick.textContent = href;
+    pick.addEventListener("click", () => onSelectPlaylist(index));
+    const actions = document.createElement("div");
+    actions.className = "pl-actions";
+    const up = document.createElement("button");
+    up.type = "button";
+    up.textContent = "Up";
+    up.disabled = index === 0;
+    up.addEventListener("click", () => onMovePlaylist(index, -1));
+    const down = document.createElement("button");
+    down.type = "button";
+    down.textContent = "Down";
+    down.disabled = index === state.playlist.length - 1;
+    down.addEventListener("click", () => onMovePlaylist(index, 1));
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => onRemovePlaylist(index));
+    actions.append(up, down, remove);
+    li.append(pick, actions);
+    els.playlist.append(li);
+  });
+}
+
+function activeSession() {
+  return (
+    state.sessions.find((sess) => sess.state === "starting" || sess.state === "live") ||
+    state.sessions.find((sess) => sess.source_url) ||
+    null
+  );
+}
+
+function renderNowPlaying() {
+  const sess = activeSession();
+  const copy = nowPlayingCopy(sess, state.playlist.length);
+  const url = sess?.source_url || "";
+  if (!copy && !url) {
+    els.playlistNow.textContent = "";
+    els.playlistNow.classList.add("hidden");
+    return;
+  }
+  els.playlistNow.textContent = url ? `${url}\n${copy}` : copy;
+  els.playlistNow.classList.remove("hidden");
+}
+
 function renderSessions() {
   els.sessionList.replaceChildren();
   for (const sess of state.sessions) {
     const li = document.createElement("li");
     const source = document.createElement("span");
     source.className = "sess-source";
-    source.textContent = sess.source_url || "";
+    const index = Number.isInteger(sess.source_index) ? sess.source_index + 1 : 0;
+    source.textContent = index
+      ? `${index}. ${sess.source_url || ""}`
+      : sess.source_url || "";
     const name = document.createElement("span");
     name.className = "sess-name";
     name.textContent = sess.name || "";
@@ -262,14 +330,18 @@ function render() {
   els.keysHelper.textContent = state.keysError || KEYS_HELPER;
   els.saveBtn.disabled = !readField(els.rtmpKey);
   els.previewBtn.disabled = parseSourceUrl(readField(els.source)).reason === "youtube-first";
+  els.addUrlBtn.disabled = parseSourceUrl(readField(els.source)).reason === "youtube-first";
   els.continueBtn.disabled = !canContinue(gate());
-  els.startBtn.disabled = !canStart(gate());
+  const urls = playlistUrls(state.playlist, readField(els.source).trim());
+  els.startBtn.disabled = !canStart(gate()) || urls.length === 0;
   const hasSessionStop = state.sessions.some((sess) => canStop({ state: sess.state }));
   els.stopBtn.disabled = !canStop({ state: state.backend }) && !hasSessionStop;
 
   renderKeyList();
   renderKeyPicker();
+  renderPlaylist();
   renderSessions();
+  renderNowPlaying();
 
   els.helper.textContent = transportHelper({
     backend: state.backend,
@@ -352,7 +424,7 @@ function applyOperator(result, source) {
     render();
     return;
   }
-  if (result.source_url && !state.previewOk) {
+  if (result.source_url && !state.previewOk && state.playlist.length === 0) {
     // Restore only when the typed value is empty/wrong — never append, never rewrite the same URL.
     writeSourceIfNeeded(els.source, result.source_url);
     runPreview();
@@ -426,6 +498,49 @@ async function onDeleteKey(id) {
   render();
 }
 
+function commitTypedUrl() {
+  const next = addUrl(state.playlist, readField(els.source).trim());
+  if (next.length === state.playlist.length) return state.playlist;
+  state.playlist = next;
+  state.selectedPlIndex = next.length - 1;
+  return state.playlist;
+}
+
+function onAddUrl() {
+  const before = state.playlist.length;
+  commitTypedUrl();
+  if (state.playlist.length === before) {
+    const parsed = parseSourceUrl(readField(els.source));
+    applyPreview(parsed);
+    render();
+    return;
+  }
+  runPreview();
+}
+
+function onSelectPlaylist(index) {
+  const href = state.playlist[index];
+  if (!href) return;
+  state.selectedPlIndex = index;
+  writeField(els.source, href);
+  runPreview();
+}
+
+function onMovePlaylist(index, delta) {
+  const next = moveUrl(state.playlist, index, delta);
+  const href = state.playlist[index];
+  state.playlist = next;
+  state.selectedPlIndex = href ? next.indexOf(href) : -1;
+  render();
+}
+
+function onRemovePlaylist(index) {
+  state.playlist = removeAt(state.playlist, index);
+  if (state.selectedPlIndex === index) state.selectedPlIndex = -1;
+  else if (state.selectedPlIndex > index) state.selectedPlIndex -= 1;
+  render();
+}
+
 async function onStopSession(sess) {
   if (!canStop({ state: sess.state })) return;
   try {
@@ -444,6 +559,7 @@ async function onStopSession(sess) {
 }
 
 els.previewBtn.addEventListener("click", runPreview);
+els.addUrlBtn.addEventListener("click", onAddUrl);
 
 els.source.addEventListener("input", invalidatePreviewIfSourceChanged);
 els.source.addEventListener("blur", runPreview);
@@ -509,6 +625,7 @@ els.saveBtn.addEventListener("click", async () => {
 
 els.continueBtn.addEventListener("click", () => {
   if (!canContinue(gate())) return;
+  commitTypedUrl();
   showBeat(3);
   render();
 });
@@ -534,8 +651,9 @@ els.startBtn.addEventListener("click", async () => {
   if (!canStart(gate())) return;
   els.startBtn.disabled = true;
   try {
+    const source_urls = playlistUrls(state.playlist, readField(els.source).trim());
     const result = await retransApi.start({
-      source_url: readField(els.source).trim(),
+      source_urls,
       key_id: state.selectedKeyId,
     });
     applyBackend(result);

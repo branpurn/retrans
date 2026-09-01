@@ -10,12 +10,15 @@
  * DELETE /api/live/keys/<id> → 200
  * GET    /api/live/preview?source_url= → 200 { ok, source_url, title, is_live }
  *        probe fail → 502 { ok:false, error } (not 200 empty/false)
- * POST   /api/live/start  { source_url, key_id } only → 200 { ok, state:"starting" }
+ * POST   /api/live/start  { source_url, key_id } live-only (unchanged)
+ * POST   /api/live/start  { source_urls: [url, ...], key_id } VOD+live playlist
  * POST   /api/live/stop   { session_id } | { key_id } → 200 { ok, state:"stopped" }
- * GET    /api/live/status → 200 { sessions:[{session_id,key_id,name,source_url,state,error}] }
+ * GET    /api/live/status → 200 { sessions:[{session_id,key_id,name,source_url,source_index,state,error}] }
  *
  * Never log or return rtmp_url / rtmp_key. No clip routes. Keys panel uses named keys only.
  */
+
+import { startBody } from "./playlist.js";
 
 const START = "/api/live/start";
 const STOP = "/api/live/stop";
@@ -44,7 +47,7 @@ async function readBody(res) {
 }
 
 function publicSession(raw = {}) {
-  return {
+  const session = {
     session_id: typeof raw.session_id === "string" ? raw.session_id : "",
     key_id: typeof raw.key_id === "string" ? raw.key_id : "",
     name: typeof raw.name === "string" ? raw.name : "",
@@ -52,12 +55,16 @@ function publicSession(raw = {}) {
     state: typeof raw.state === "string" ? raw.state : "",
     error: typeof raw.error === "string" ? raw.error : "",
   };
+  if (Number.isInteger(raw.source_index) && raw.source_index >= 0) {
+    session.source_index = raw.source_index;
+  }
+  return session;
 }
 
 function publicStatus(data = {}, httpStatus) {
   const state = typeof data.state === "string" ? data.state : "error";
   const sessions = Array.isArray(data.sessions) ? data.sessions.map(publicSession) : [];
-  return {
+  const result = {
     ok: Boolean(data.ok),
     state,
     source_url: typeof data.source_url === "string" ? data.source_url : "",
@@ -65,6 +72,10 @@ function publicStatus(data = {}, httpStatus) {
     sessions,
     httpStatus,
   };
+  if (Number.isInteger(data.source_index) && data.source_index >= 0) {
+    result.source_index = data.source_index;
+  }
+  return result;
 }
 
 function publicKey(data = {}, httpStatus, error = "") {
@@ -87,8 +98,8 @@ function publicKey(data = {}, httpStatus, error = "") {
 
 // status.source_url / error may be null from retrans serve; never leak dest fields.
 
-export async function start({ source_url, key_id }) {
-  const body = { source_url, key_id };
+export async function start({ source_url, source_urls, key_id } = {}) {
+  const body = startBody({ source_url, source_urls, key_id });
   const res = await fetch(START, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
