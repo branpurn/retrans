@@ -23,7 +23,6 @@ describe("retransApi lock", () => {
     assert.match(src, /method:\s*["']PUT["']/);
     assert.match(src, /method:\s*["']DELETE["']/);
     assert.doesNotMatch(src, /\/api\/clip/);
-    assert.doesNotMatch(src, /oauth/i);
   });
 
   it("shell does not clip helpers with overflow:hidden", () => {

@@ -9,7 +9,7 @@
  * POST   /api/live/stop   → 200 { ok, state:"stopped" }
  * GET    /api/live/status → 200 { ok, state, source_url, error }
  *
- * Never log or return rtmp_url / rtmp_key. No clip routes. No X OAuth.
+ * Never log or return rtmp_url / rtmp_key. No clip routes.
  */
 
 const START = "/api/live/start";
