@@ -1,17 +1,20 @@
 # Operator-run live worker. Outbound RTMP(S) only — no host port published.
 # Wave 1 is a long-running live pipeline, not a clip-only batch job.
 # X credentials stay in .env (gitignored). Copy .env.example → .env.
+# Image: ghcr.io/branpurn/retrans (GitHub Release tag or latest).
 #
-# Live worker: `docker compose --profile live up --build` (no host bind).
-# Loopback (Linux host network): `docker compose --profile loopback up --build`
+# Operator (pull + one compose): `RETRANS_IMAGE_TAG=<tag> docker compose --profile loopback up`
 #   ONE service: retrans serve on 127.0.0.1:8788 hosts dist/ + /api (same-origin).
 #   Does not start the live ffmpeg worker. Does not start Vite.
 #   Host network is required: publishing 8788:8788 would need the process to
 #   listen on 0.0.0.0 inside the container, which retrans serve refuses.
-#   Live service has no container_name so more than one keyed worker can run.
+# Live worker (keyed): `docker compose --profile live up` (no host bind).
+#   No keys → entrypoint idles (does not start ffmpeg). No container_name so
+#   more than one keyed worker can run.
 services:
   retrans:
     profiles: ["live"]
+    image: ghcr.io/branpurn/retrans:${RETRANS_IMAGE_TAG:-latest}
     build: .
     env_file:
       - path: .env
@@ -22,6 +25,7 @@ services:
 
   serve:
     profiles: ["loopback"]
+    image: ghcr.io/branpurn/retrans:${RETRANS_IMAGE_TAG:-latest}
     build: .
     command: retrans serve
     network_mode: host

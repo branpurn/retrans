@@ -19,16 +19,33 @@ jobs:
       - name: Compose file
         run: docker compose config
       - name: Compose live profile
-        run: docker compose --profile live config
+        run: |
+          docker compose --profile live config
+          docker compose --profile live config | grep -F 'ghcr.io/branpurn/retrans'
+          ! docker compose --profile live config | grep -E 'ports:|8788:8788|0\.0\.0\.0'
+          # No container_name — concurrent keyed workers stay allowed.
+          ! docker compose --profile live config | grep -F 'container_name:'
       - name: Compose loopback profile
         run: |
           docker compose --profile loopback config
-          # ONE service — no Vite ui / 5173, no published 8788:8788
+          # ONE service — GHCR image, no Vite ui / 5173, no published 8788:8788
           test "$(docker compose --profile loopback config --services | wc -l)" -eq 1
           ! docker compose --profile loopback config --services | grep -qx ui
-          ! docker compose --profile loopback config | grep -E '5173|8788:8788'
+          ! docker compose --profile loopback config | grep -E '5173|8788:8788|0\.0\.0\.0'
+          docker compose --profile loopback config | grep -F 'ghcr.io/branpurn/retrans'
           docker compose --profile loopback config | grep -F 'network_mode: host'
           docker compose --profile loopback config | grep -F '127.0.0.1'
+      - name: Release workflow publishes GHCR (no PR push, no extra secrets)
+        run: |
+          test -f .github/workflows/release.yml
+          grep -F 'workflow_dispatch' .github/workflows/release.yml
+          grep -F 'packages: write' .github/workflows/release.yml
+          grep -F 'GITHUB_TOKEN' .github/workflows/release.yml
+          grep -F 'ghcr.io/branpurn/retrans' .github/workflows/release.yml
+          grep -E "tags:|'v\*'|\"v\*\"" .github/workflows/release.yml
+          ! grep -E '^[[:space:]]*pull_request:' .github/workflows/release.yml
+          extra="$(grep -oE 'secrets\.[A-Z0-9_]+' .github/workflows/release.yml | grep -v GITHUB_TOKEN || true)"
+          test -z "$extra"
       - name: Live tools (ffmpeg, yt-dlp, streamlink) and dist/
         run: |
           docker run --rm --entrypoint bash retrans:ci -c '
