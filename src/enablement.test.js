@@ -1,6 +1,14 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { backendFromResult, canStart, canStop, pillFor, pillLabel } from "./enablement.js";
+import { readFileSync } from "node:fs";
+import {
+  backendFromResult,
+  canStart,
+  canStop,
+  isUsableStatus,
+  pillFor,
+  pillLabel,
+} from "./enablement.js";
 
 function chromePill(result, previewOk = false) {
   return pillLabel(pillFor({ previewOk, state: backendFromResult(result) }));
@@ -56,16 +64,41 @@ describe("enablement", () => {
       error: "ffmpeg restream exited",
       httpStatus: 200,
     };
+    assert.equal(isUsableStatus(result), true);
     assert.equal(backendFromResult(result), "error");
     assert.equal(chromePill(result, true), "Error");
-    assert.equal(chromePill({ ok: true, state: "error", error: "boom" }, true), "Error");
+    assert.equal(chromePill({ ok: true, state: "error", error: "boom", httpStatus: 200 }, true), "Error");
   });
 
   it("idle GET {error:null} stays Idle/Preview, not Error", () => {
     const result = { ok: true, state: "idle", error: null, httpStatus: 200 };
+    assert.equal(isUsableStatus(result), true);
     assert.equal(backendFromResult(result), "idle");
     assert.equal(chromePill(result, false), "Idle");
     assert.equal(chromePill(result, true), "Preview");
     assert.equal(chromePill({ ok: true, state: "idle", error: "", httpStatus: 200 }, false), "Idle");
+  });
+
+  it("status poll/boot failure stays Idle — not Error / status failed", () => {
+    const failed = [
+      { ok: false, state: "error", error: "status failed", httpStatus: 502 },
+      { ok: false, error: "bad-response", httpStatus: 502 },
+      { ok: false, state: "error", error: "", httpStatus: 503 },
+      null,
+      undefined,
+    ];
+    for (const result of failed) {
+      assert.equal(isUsableStatus(result), false);
+    }
+    // Chrome stays Idle; transport helper stays the idle copy (applyStatus no-ops).
+    assert.equal(pillLabel(pillFor({ previewOk: false, state: "idle" })), "Idle");
+    assert.equal(pillLabel(pillFor({ previewOk: true, state: "idle" })), "Preview");
+
+    const main = readFileSync(new URL("./main.js", import.meta.url), "utf8");
+    const api = readFileSync(new URL("./retransApi.js", import.meta.url), "utf8");
+    assert.match(main, /isUsableStatus/);
+    assert.match(main, /applyStatus/);
+    assert.doesNotMatch(main, /error\s*=\s*["']status failed["']/);
+    assert.doesNotMatch(api, /["']status failed["']/);
   });
 });
