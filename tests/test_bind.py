@@ -112,3 +112,14 @@ def test_readme_does_not_claim_host_wildcard_publish():
     assert "retrans serve" in run_line
     assert "--network host" not in run_line
     assert "0.0.0.0" not in run_line
+
+
+def test_readme_headless_has_no_host_wildcard_or_publish():
+    readme = Path("README.md").read_text(encoding="utf-8")
+    live_line = next(
+        line for line in readme.splitlines() if "docker run" in line and "retrans live" in line
+    )
+    assert "-p" not in live_line
+    assert "0.0.0.0" not in live_line
+    assert "--network host" not in live_line
+    assert "RETRANS_X_RTMP_KEY" in readme
