@@ -181,7 +181,9 @@ export async function saveKey({ id, name, rtmp_key, rtmp_url }) {
   const data = await readBody(res);
   let error = typeof data.error === "string" ? data.error : "";
   if (error) error = redactSecrets(error, [rtmp_key, rtmp_url]);
-  if (!res.ok && !error) error = "save failed";
+  if (!res.ok && !error) {
+    error = res.status === 409 ? "name already exists" : "save failed";
+  }
   return publicKey(data, res.status, error);
 }
 

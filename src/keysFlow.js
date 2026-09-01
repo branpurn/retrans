@@ -33,6 +33,23 @@ export function defaultKeyName(keys) {
   return n === 1 ? "Key" : `Key ${n}`;
 }
 
+/** Exact name match. Backend 409 is case-sensitive on a different id. */
+export function findKeyByName(keys, name) {
+  const wanted = typeof name === "string" ? name.trim() : "";
+  if (!wanted) return null;
+  return (Array.isArray(keys) ? keys : []).find((key) => key.name === wanted) || null;
+}
+
+/**
+ * Same-id edit keeps that id (200 even if the name is unchanged).
+ * Add with a name already used → that row's id (edit, not a silent duplicate).
+ */
+export function resolveSaveKeyId({ keys, name, id } = {}) {
+  const given = typeof id === "string" && id.trim() ? id.trim() : "";
+  if (given) return given;
+  return findKeyByName(keys, name)?.id || "";
+}
+
 export function mergeOptimisticKey(keys, saved) {
   const next = publicNamedKey(saved);
   if (!next) return Array.isArray(keys) ? keys.slice() : [];
@@ -224,7 +241,8 @@ export function putKeyBody({ name, rtmp_key, rtmp_url, keys, id }) {
     resolved = defaultKeyName(keys);
   }
   const body = { rtmp_key, name: resolved };
-  if (id) body.id = id;
+  const resolvedId = resolveSaveKeyId({ keys, name: resolved, id });
+  if (resolvedId) body.id = resolvedId;
   if (rtmp_url && rtmp_url.trim()) body.rtmp_url = rtmp_url.trim();
   return body;
 }

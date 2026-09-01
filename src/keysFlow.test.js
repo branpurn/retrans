@@ -11,8 +11,10 @@ import {
   applySelectKey,
   applyStartEdit,
   defaultKeyName,
+  findKeyByName,
   mergeOptimisticKey,
   putKeyBody,
+  resolveSaveKeyId,
   unusedKeys,
 } from "./keysFlow.js";
 
@@ -154,6 +156,34 @@ describe("named keys helpers", () => {
     assert.equal("rtmp_url" in edited, false);
   });
 
+  it("Add with an existing name edits that id; same-id rename is kept", () => {
+    const keys = [
+      { id: "key-a", name: "Studio A", in_use: false },
+      { id: "key-b", name: "Studio B", in_use: false },
+    ];
+    assert.equal(findKeyByName(keys, "Studio A")?.id, "key-a");
+    assert.equal(resolveSaveKeyId({ keys, name: "Studio A" }), "key-a");
+    assert.equal(resolveSaveKeyId({ keys, name: "Studio A", id: "key-b" }), "key-b");
+    assert.equal(resolveSaveKeyId({ keys, name: "New" }), "");
+    const reuse = putKeyBody({
+      name: "Studio A",
+      rtmp_key: "placeholder-stream-key-ccc",
+      rtmp_url: "",
+      keys,
+    });
+    assert.equal(reuse.id, "key-a");
+    assert.equal(reuse.name, "Studio A");
+    const clash = putKeyBody({
+      id: "key-b",
+      name: "Studio A",
+      rtmp_key: "placeholder-stream-key-ccc",
+      rtmp_url: "",
+      keys,
+    });
+    assert.equal(clash.id, "key-b");
+    assert.equal(clash.name, "Studio A");
+  });
+
   it("mergeOptimisticKey never stores a secret field", () => {
     const merged = mergeOptimisticKey([], {
       id: "key-a",
@@ -188,6 +218,7 @@ describe("first-save wiring lock", () => {
     assert.match(main, /textContent = "Open\/Edit"/);
     assert.match(main, /textContent = "Delete"/);
     assert.match(main, /id: state\.editingId/);
+    assert.match(api, /res\.status === 409 \? "name already exists"/);
     assert.doesNotMatch(main, /leave blank to keep/i);
   });
 });

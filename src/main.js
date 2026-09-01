@@ -40,8 +40,11 @@ import {
 import {
   NAMED_TEE,
   OUTBOUND_LABEL,
+  OUTBOUND_WAIT,
   attachPlayer,
   playerShouldAttach,
+  playerShouldBindSrc,
+  playlistIsReady,
   sessionOutboundSrc,
 } from "./player.js";
 import { paintPaneMenu, paneAfterMenu, paneFromClick } from "./paneMenu.js";
@@ -76,9 +79,9 @@ const els = {
   dropAnother: document.getElementById("drop-another"),
   sessionList: document.getElementById("session-list"),
   outbound: document.getElementById("outbound"),
+  outboundWait: document.getElementById("outbound-wait"),
   player: document.getElementById("outbound-player"),
   startBtn: document.getElementById("start-btn"),
-  stopBtn: document.getElementById("stop-btn"),
   helper: document.getElementById("transport-helper"),
   pill: document.getElementById("status-pill"),
 };
@@ -105,6 +108,46 @@ const state = {
 
 let pollTimer = null;
 const outboundVideos = new Map();
+const playlistOkById = new Map();
+
+function sessionKey(sess) {
+  return sess?.session_id || sess?.key_id || "";
+}
+
+function outboundPlaylistOk(sess) {
+  const id = sessionKey(sess);
+  return Boolean(id) && playlistOkById.get(id) === true;
+}
+
+function paintOutboundWait(el, { attach, bound } = {}) {
+  if (!el) return;
+  el.textContent = OUTBOUND_WAIT;
+  el.classList.toggle("hidden", !attach || bound);
+}
+
+async function refreshOutboundReady() {
+  const live = state.sessions.filter((sess) => sess.state === "live");
+  const seen = new Set();
+  let changed = false;
+  for (const sess of live) {
+    const id = sessionKey(sess);
+    if (!id) continue;
+    seen.add(id);
+    const path = sessionOutboundSrc(sess);
+    const ok = path ? await playlistIsReady(path) : false;
+    if (playlistOkById.get(id) !== ok) {
+      playlistOkById.set(id, ok);
+      changed = true;
+    }
+  }
+  for (const id of [...playlistOkById.keys()]) {
+    if (!seen.has(id) && playlistOkById.get(id)) {
+      playlistOkById.set(id, false);
+      changed = true;
+    }
+  }
+  if (changed) render();
+}
 
 function takeOutboundVideo(sess) {
   const id = sess.session_id || sess.key_id || "";
@@ -377,11 +420,31 @@ function renderSessions() {
       const label = document.createElement("p");
       label.className = "outbound-label";
       label.textContent = OUTBOUND_LABEL;
+      const wait = document.createElement("p");
+      wait.className = "outbound-wait";
+      const bound = playerShouldBindSrc({
+        state: sess.state,
+        playlistOk: outboundPlaylistOk(sess),
+      });
+      paintOutboundWait(wait, { attach: true, bound });
       const video = takeOutboundVideo(sess);
-      attachPlayer(video, { attach: true, src: sessionOutboundSrc(sess) || NAMED_TEE });
-      wrap.append(label, video);
+      attachPlayer(video, {
+        attach: true,
+        src: bound ? sessionOutboundSrc(sess) || NAMED_TEE : "",
+      });
+      wrap.append(label, wait, video);
       li.append(wrap);
     }
+    els.sessionList.append(li);
+  }
+  if (state.sessions.length === 0 && canStop({ state: state.backend })) {
+    const li = document.createElement("li");
+    const stop = document.createElement("button");
+    stop.type = "button";
+    stop.className = "btn-stop";
+    stop.textContent = "Stop";
+    stop.addEventListener("click", () => onStopBare());
+    li.append(stop);
     els.sessionList.append(li);
   }
   pruneOutboundVideos(keep);
@@ -399,8 +462,6 @@ function render() {
   els.continueBtn.disabled = !canContinue(gate());
   const urls = playlistUrls(state.playlist, readField(els.source).trim());
   els.startBtn.disabled = !canStart(gate()) || urls.length === 0;
-  const hasSessionStop = state.sessions.some((sess) => canStop({ state: sess.state }));
-  els.stopBtn.disabled = !canStop({ state: state.backend }) && !hasSessionStop;
 
   renderKeyList();
   renderKeyPicker();
@@ -410,10 +471,16 @@ function render() {
   paintPaneMenu(els.paneMenu, state.beat);
   const rowLive = state.sessions.some((sess) => playerShouldAttach({ backend: sess.state }));
   const attach = !rowLive && playerShouldAttach({ backend: state.backend, sessions: state.sessions });
+  const sess = activeSession();
+  const bound = playerShouldBindSrc({
+    state: sess?.state || state.backend,
+    playlistOk: outboundPlaylistOk(sess),
+  });
   els.outbound?.classList.toggle("hidden", !attach);
+  paintOutboundWait(els.outboundWait, { attach, bound });
   attachPlayer(els.player, {
     attach,
-    src: sessionOutboundSrc(activeSession()) || NAMED_TEE,
+    src: bound ? sessionOutboundSrc(sess) || NAMED_TEE : "",
   });
 
   els.helper.textContent = transportHelper({
@@ -527,6 +594,7 @@ function applyOperator(result, source) {
   if (state.backend === "starting" || state.backend === "live" || liveish) startPolling();
   else stopPolling();
   render();
+  refreshOutboundReady();
 }
 
 function startPolling() {
@@ -652,6 +720,17 @@ async function onStopSession(sess) {
   render();
 }
 
+async function onStopBare() {
+  if (state.sessions.length > 0 || !canStop({ state: state.backend })) return;
+  try {
+    await retransApi.stop({});
+  } catch {
+    /* no session row — Stop still dismisses Error / Starting */
+  }
+  applyBackend({ ok: true, state: "stopped", httpStatus: 200, error: "", sessions: [] });
+  state.error = "";
+}
+
 els.paneMenu.addEventListener("click", (event) => {
   const pane = paneFromClick(event.target);
   if (!pane) return;
@@ -762,27 +841,6 @@ els.startBtn.addEventListener("click", async () => {
   } catch {
     state.backend = "error";
     state.error = "start failed";
-    render();
-  }
-});
-
-els.stopBtn.addEventListener("click", async () => {
-  if (!canStop({ state: state.backend }) && !state.sessions.some((sess) => canStop({ state: sess.state }))) {
-    return;
-  }
-  els.stopBtn.disabled = true;
-  const sess = state.sessions.find((row) => canStop({ state: row.state }));
-  try {
-    applyBackend(
-      await retransApi.stop(
-        sess ? { session_id: sess.session_id, key_id: sess.key_id } : {},
-      ),
-    );
-    if (sess) state.stuckErrors = clearStuck(state.stuckErrors, sess);
-    state.error = "";
-  } catch {
-    state.backend = "error";
-    state.error = "stop failed";
     render();
   }
 });

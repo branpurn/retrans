@@ -34,7 +34,7 @@ export function canStart({ previewOk, configured, ack, state, selectedKeyId, sel
 }
 
 export function canStop({ state }) {
-  return state === "live" || state === "error";
+  return state === "starting" || state === "live" || state === "error";
 }
 
 /**

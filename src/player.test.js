@@ -5,9 +5,12 @@ import {
   attachPlayer,
   NAMED_TEE,
   OUTBOUND_LABEL,
+  OUTBOUND_WAIT,
   outboundMediaPath,
   outboundSrc,
   playerShouldAttach,
+  playerShouldBindSrc,
+  playlistIsReady,
   sessionOutboundSrc,
 } from "./player.js";
 
@@ -45,6 +48,41 @@ function fakeVideo() {
 }
 
 describe("outbound player", () => {
+  it("binds picture+sound only when live and playlist 200", () => {
+    assert.equal(OUTBOUND_WAIT, "Waiting");
+    assert.equal(playerShouldBindSrc({ state: "starting", playlistOk: false }), false);
+    assert.equal(playerShouldBindSrc({ state: "starting", playlistOk: true }), false);
+    assert.equal(playerShouldBindSrc({ state: "live", playlistOk: false }), false);
+    assert.equal(playerShouldBindSrc({ state: "live", playlistOk: true }), true);
+    assert.equal(playerShouldBindSrc({ state: "idle", playlistOk: true }), false);
+    assert.equal(playerShouldBindSrc({ state: "error", playlistOk: true }), false);
+  });
+
+  it("playlist 404/empty stays Waiting — not ready, not Error", async () => {
+    const orig = globalThis.fetch;
+    try {
+      globalThis.fetch = async () => ({ status: 404, text: async () => "" });
+      assert.equal(await playlistIsReady(HLS), false);
+      globalThis.fetch = async () => ({ status: 200, text: async () => "" });
+      assert.equal(await playlistIsReady(HLS), false);
+      globalThis.fetch = async () => ({ status: 200, text: async () => "  \n" });
+      assert.equal(await playlistIsReady(HLS), false);
+      globalThis.fetch = async () => {
+        throw new Error("network");
+      };
+      assert.equal(await playlistIsReady(HLS), false);
+      globalThis.fetch = async () => ({
+        status: 200,
+        text: async () => "#EXTM3U\n#EXT-X-TARGETDURATION:1\n",
+      });
+      assert.equal(await playlistIsReady(HLS), true);
+    } finally {
+      globalThis.fetch = orig;
+    }
+    assert.equal(await playlistIsReady("/api/live/preview"), false);
+    assert.equal(await playlistIsReady(""), false);
+  });
+
   it("attaches only while Retrans is starting or live", () => {
     assert.equal(playerShouldAttach({ backend: "starting" }), true);
     assert.equal(playerShouldAttach({ backend: "live" }), true);
@@ -126,6 +164,7 @@ describe("outbound player", () => {
     const css = readFileSync(new URL("./style.css", import.meta.url), "utf8");
     const beat3 = html.slice(html.indexOf('id="beat-3"'));
     assert.match(beat3, />Outbound</);
+    assert.match(beat3, />Waiting</);
     assert.match(beat3, /<video\b[^>]*id="outbound-player"/);
     assert.match(beat3, /<video\b[^>]*controls/);
     assert.match(beat3, /<video\b[^>]*playsinline/);
@@ -140,7 +179,7 @@ describe("outbound player", () => {
     assert.doesNotMatch(html, /\b[Cc]lip\b/);
     assert.doesNotMatch(main, /\/api\/clip/);
     assert.match(html, /id="playlist-now"/);
-    assert.match(html, /id="stop-btn"[^>]*>Stop</s);
+    assert.doesNotMatch(html, /id="stop-btn"/);
     assert.match(html, />Keys \/ Configuration</);
     assert.match(css, /\.outbound-player/);
     assert.match(main, /attachPlayer/);
@@ -148,6 +187,10 @@ describe("outbound player", () => {
     assert.match(main, /NAMED_TEE/);
     assert.match(main, /OUTBOUND_LABEL/);
     assert.match(main, /sessionOutboundSrc/);
+    assert.match(main, /playerShouldBindSrc/);
+    assert.match(main, /playlistIsReady/);
+    assert.match(main, /OUTBOUND_WAIT/);
+    assert.doesNotMatch(main, /state\.error\s*=\s*.*playlist/);
     assert.doesNotMatch(main, /video\.src\s*=\s*.*source_url/);
     assert.doesNotMatch(main, /preview-thumb.*outbound-player/);
     assert.doesNotMatch(api, /\/api\/live\/monitor/);

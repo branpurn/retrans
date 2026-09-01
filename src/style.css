@@ -471,6 +471,11 @@ details[open] {
   color: var(--muted);
 }
 
+.outbound-wait {
+  margin: 0;
+  color: var(--muted);
+}
+
 .outbound-player {
   display: block;
   width: 100%;

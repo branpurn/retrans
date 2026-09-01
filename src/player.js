@@ -1,7 +1,9 @@
 /**
  * Beat 3 outbound player. HTML5 <video> + audio on same-origin 8788.
  * Src is GET /api/live/status sessions[].outbound_url — path-only
- * `/live/<session_id>/index.m3u8`. Empty until starting/live.
+ * `/live/<session_id>/index.m3u8`. Bind only when state is live AND
+ * that playlist returns 200. Starting keeps chrome + Waiting
+ * (404/empty m3u8 is inherent — not an Error pill).
  * No YouTube embed. No preview thumbnail. No invented /api routes.
  */
 
@@ -27,9 +29,17 @@ export const NAMED_TEE = "";
 /** Designer lock — visual label on Beat 3. Not Preview, Monitor, or Clip. */
 export const OUTBOUND_LABEL = "Outbound";
 
+/** Designer lock in the player area. Pair with Starting pill — not a second pill. */
+export const OUTBOUND_WAIT = "Waiting";
+
 export function playerShouldAttach({ backend, sessions = [] } = {}) {
   if (LIVEISH.has(backend)) return true;
   return sessions.some((sess) => LIVEISH.has(sess.state));
+}
+
+/** Picture+sound only after live AND a 200 playlist. Starting never binds. */
+export function playerShouldBindSrc({ state, playlistOk } = {}) {
+  return state === "live" && playlistOk === true;
 }
 
 /** Path-only playlist for a session id. Never a host or secret. */
@@ -70,6 +80,23 @@ export function outboundSrc(namedTee = NAMED_TEE) {
 export function sessionOutboundSrc(session) {
   if (!session || !LIVEISH.has(session.state)) return "";
   return outboundSrc(session.outbound_url) || outboundMediaPath(session.session_id);
+}
+
+/**
+ * Same-origin playlist probe. 200 + nonempty body = ready.
+ * 404 / empty / network is inherent HLS delay — not an API fail, not Error.
+ */
+export async function playlistIsReady(src) {
+  const media = outboundSrc(src);
+  if (!media) return false;
+  try {
+    const res = await fetch(media, { cache: "no-store" });
+    if (res.status !== 200) return false;
+    const text = await res.text();
+    return text.trim().length > 0;
+  } catch {
+    return false;
+  }
 }
 
 function destroyHls(video) {
