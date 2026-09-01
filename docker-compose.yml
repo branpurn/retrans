@@ -1,6 +1,12 @@
 # Operator-run live worker. Outbound RTMP(S) only — no host port published.
 # Wave 1 is a long-running live pipeline, not a clip-only batch job.
 # X credentials stay in .env (gitignored). Copy .env.example → .env.
+#
+# Default: `docker compose up --build` → live ffmpeg worker only (no host bind).
+# Loopback (Linux host network): `docker compose --profile loopback up --build`
+#   serve + ui bind 127.0.0.1 on the host. Never 0.0.0.0 / LAN / hotspot.
+#   Host network is required: publishing 8788:8788 would need the process to
+#   listen on 0.0.0.0 inside the container, which retrans serve refuses.
 services:
   retrans:
     build: .
@@ -10,3 +16,30 @@ services:
     init: true
     restart: unless-stopped
     stop_grace_period: 15s
+
+  serve:
+    profiles: ["loopback"]
+    build: .
+    command: retrans serve
+    network_mode: host
+    environment:
+      HOST: "127.0.0.1"
+      PORT: "8788"
+    env_file:
+      - path: .env
+        required: false
+    init: true
+
+  ui:
+    profiles: ["loopback"]
+    image: node:22-bookworm
+    working_dir: /app
+    volumes:
+      - .:/app
+    command: sh -c "npm ci && npm run dev"
+    network_mode: host
+    environment:
+      HOST: "127.0.0.1"
+    depends_on:
+      - serve
+    init: true

@@ -18,6 +18,8 @@ jobs:
         run: docker build -t retrans:ci .
       - name: Compose file
         run: docker compose config
+      - name: Compose loopback profile
+        run: docker compose --profile loopback config
       - name: Live tools (ffmpeg, yt-dlp, streamlink)
         run: |
           docker run --rm --entrypoint bash retrans:ci -c '

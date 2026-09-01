@@ -19,6 +19,24 @@ There is **no public X API** to create a live broadcast or mint an RTMP key. Sen
 
 Operator dependencies: **ffmpeg** and **yt-dlp** (streamlink optional fallback). Operator-run image: `docker compose up --build` (ffmpeg + yt-dlp + streamlink). Secrets via `.env` / env vars only (copy `.env.example`; never commit `.env`).
 
+## Operator loopback (one command)
+
+UI + `retrans serve` together, both on `127.0.0.1` only (never `0.0.0.0` / LAN / hotspot).
+
+Linux + Docker (host network so `retrans serve` can bind `127.0.0.1:8788` on the host; publishing `8788:8788` is forbidden because that would require listen `0.0.0.0` inside the container):
+
+```bash
+docker compose --profile loopback up --build
+```
+
+Without Docker (`pip install -e .` and `npm install` first):
+
+```bash
+./scripts/loopback.sh
+```
+
+Then open the Vite URL (typically `http://127.0.0.1:5173`). Control API: `http://127.0.0.1:8788`. Default `docker compose up` remains the live ffmpeg worker (no host port).
+
 ## Permission / fair use
 
 This restreams a live source to the **operator’s** X account. The operator must have rights to the source. Restreaming someone else’s YouTube live without permission can violate YouTube’s Terms of Service and copyright. This is not legal advice. RETRANS is not a hidden bot.
