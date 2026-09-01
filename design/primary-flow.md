@@ -14,6 +14,8 @@ RETRANS operator. Live YouTube → X. Three beats. Localhost.
 2. Drop link
 3. Retrans
 
+These are the three **pane menu** panes (Designer lock labels: **Keys** / **Drop link** / **Outbound**). Not a fourth beat.
+
 **LIVE** first. Playlist on Drop link / Retrans may include **live or VOD** page URLs that roll (YouTube first). Not clip-post. Not file upload. Never Posted / Clip / Tweet / Upload.
 
 Bind and proxy **127.0.0.1 only**. Never `0.0.0.0`, LAN, or hotspot.
@@ -31,7 +33,7 @@ Beat 1 is **Keys / Configuration** — named Media Studio stream-key save (RTMP 
 - Backend `starting` → pill **Starting** (not Preview). Backend `live` → **LIVE**. Backend `stopped` → **Stopped**.
 - Gap 12 (`--gap`) between stacked controls on the current beat.
 - Type (from layout-v1): 13/18 body, 15/22 title, `font-family: ui-sans-serif, system-ui, sans-serif`. Buttons 32px tall, pad 12, radius `--radius`.
-- Show **one beat at a time**. No five-block stack. No settings pages.
+- Show **one beat at a time**. Always-visible compact **3-item pane menu** switches them (**Keys** / **Drop link** / **Outbound**). No five-block stack. No settings pages. Not a hamburger. Not a fourth beat.
 
 ### Status rules (from layout-v1 Error chrome)
 
@@ -66,30 +68,53 @@ Chrome lock for Drop link / Retrans. Backend ingest owns roll. No extra routes. 
 
 Outbound monitor (picture + sound of the encoded outbound) is **Beat 3 only**. Do not put it on Drop link or Keys / Configuration. Do not restomp this playlist chrome.
 
+## Pane menu
+
+One compact **3-item** menu on the existing 3-beat 480px console at `http://127.0.0.1:8788`. Brain-dead. Always visible. Selected item marked. One pane visible at a time. The menu switches the three existing panes — not a fourth beat, not a hamburger settings page, not tabs-as-settings, not a settings maze. Same origin **8788** only. No second port. No Vite `5173` operator path. No new API routes. No clip UI. No OAuth. No Sign-in framing.
+
+Copywriter is off. Designer owns chrome labels. Frontend owns exact UI strings. Product RETRANS.
+
+Menu labels (Designer lock, three items only):
+
+1. **Keys** — opens Beat 1 Keys / Configuration. Do not rename that panel. Do not restomp Open / Edit / Select / Delete, Advanced collapsed, or `?` help.
+2. **Drop link** — opens Beat 2 Drop link / playlist. Do not restomp ordered live+VOD URLs, named key stays, roll next, or the preview card.
+3. **Outbound** — opens Beat 3 Retrans including the Outbound encode player. Do not restomp the Outbound spec: picture + sound of the encoded RTMP (tee of X RTMP), not a YouTube embed, not clip, not preview metadata.
+
+Switching panes does **not** Stop a running session. The Outbound player still hides on Idle / Stopped and shows on Starting / LIVE per the existing Outbound spec.
+
+Prefer this menu as the switcher so we do not grow a button row. Existing in-beat links (**Change destination** / **Keys**, **Drop another**) may remain as shortcuts **or** defer to the menu. Do not add extra nav.
+
 ## Boot / routing
 
 On load:
 
 1. `GET /api/live/keys`
-2. Empty `keys` list (or first visit / GET fail treated as empty) → **Beat 1 (Keys / Configuration)** so the operator can **Add**. Do **not** frame empty-keys as Sign in.
-3. Keys present → still **Beat 1** (named-key list with Open / Edit / Select / Delete). Operator goes to **Beat 2** only with a **selected** named key. Do **not** skip Beat 1 because keys exist (that was the Sign-in gate).
+2. Empty `keys` list (or first visit / GET fail treated as empty) → **Beat 1 (Keys / Configuration)** — menu **Keys** — so the operator can **Add**. Do **not** frame empty-keys as Sign in.
+3. Keys present → still **Beat 1** (named-key list with Open / Edit / Select / Delete). Do **not** skip Keys because keys exist (that was the Sign-in gate).
 
-Keys / Configuration is **not** a Sign-in gate. Empty keys never mean “Sign in”. Saved named keys are not Delete-only.
+The **pane menu** is how the operator switches after that. Keys / Configuration is **not** a Sign-in gate. Empty keys never mean “Sign in”. Saved named keys are not Delete-only.
 
-Forward only (still three beats — no fourth page):
+**Drop link** still requires a selected named key (existing **Select** / first-**Save**-that-selects). Menu item **Drop link** with no selected key stays on Keys or shows the existing helper — do not invent a maze.
 
-- Beat 1 **Select** (or first **Save** that also selects the new key) → Beat 2
-- Beat 2 Continue → Beat 3
+**Outbound** menu item opens Beat 3 (start/stop/sessions + Outbound player). Switching panes does not Stop a running session.
 
-Same-beat / back links, not a settings maze:
+Forward / switch (still three panes — no fourth page). The pane menu is the switcher:
+
+- Menu **Keys** / **Drop link** / **Outbound** → Beat 1 / Beat 2 / Beat 3
+- Beat 1 **Select** (or first **Save** that also selects the new key) still selects the named key (existing Keys rule) and may land on Beat 2 as today — or the operator uses the **Drop link** menu item
+- Beat 2 Continue may land on Beat 3 as today — or the operator uses the **Outbound** menu item
+
+Prefer the menu so we do not grow a button row.
+
+Same-beat / back links, not a settings maze (shortcuts — may remain **or** defer to the menu):
 
 - On Beat 1: **Add** another named key (Add + Save) stays on Beat 1
-- On Beat 2: small **Change destination** / **Keys** link → Beat 1 (the Keys / Configuration panel; empty Add / Edit fields; never prefill secrets)
-- On Beat 3: **Drop another** / back to Beat 2 with an unused named key. If no unused key, helper to add a key → Beat 1 (Keys / Configuration; empty Add fields)
+- On Beat 2: small **Change destination** / **Keys** link → Beat 1 (the Keys / Configuration panel; empty Add / Edit fields; never prefill secrets) — or use the **Keys** menu item
+- On Beat 3: **Drop another** / back to Beat 2 with an unused named key. If no unused key, helper to add a key → Beat 1 (Keys / Configuration; empty Add fields) — or use the **Drop link** / **Keys** menu items
 
 No other pages. No OAuth screens. No clip-post. No `/api/live/credentials` chrome.
 
-## Beat 1 — Keys / Configuration
+## Beat 1 — Keys / Configuration (menu pane **Keys**)
 
 Shown when `GET /api/live/keys` → empty `keys` (or first visit) so the operator can **Add**. Also shown when keys are present (list is not Delete-only). Also when the operator chooses **Change destination** / **Keys** from Beat 2 or Beat 3.
 
@@ -134,7 +159,7 @@ Also one short line in that help (not a Broadcast UI): **Broadcasts → Create B
 
 No extra Media Studio maze beyond this `?` disclosure. No settings page. No “Sign in with X”. No Sign-in framing.
 
-## Beat 2 — Drop link
+## Beat 2 — Drop link (menu pane **Drop link**)
 
 Ordered **source-URL list** on this beat. Operator can add / reorder / remove page URLs. Items may be **live or VOD** (YouTube first). Not clip UI. Not file upload. Not Sign-in. Not a playlist editor maze — compact list inside the 480px beat.
 
@@ -193,7 +218,7 @@ Optional: small **Change destination** / **Keys** link (not a button row, not a 
 
 No RTMP fields on this beat. No start/stop. Preview payload has no RTMP fields — never display rtmp secrets from preview. Named-key picker shows **names only**.
 
-## Beat 3 — Retrans
+## Beat 3 — Retrans (menu pane **Outbound**)
 
 Keep three beats and 480px. Concurrent restreams live on this beat (not a fourth page). One named key per restream / playlist run. The selected named key **stays** for the whole playlist run (same `key_id` across roll). Do not force re-Select on each item. Operator can run multiple playlist sessions at once (unused keys).
 
@@ -291,8 +316,8 @@ Reuse [layout-v1.md](layout-v1.md) `:root` tokens:
 
 ## Out of primary
 
-No settings pages. No clip-post. No clip download. No clip download from the Outbound player. No schedule. No OAuth screens. No Sign-in framing. No “Sign in with X”. No showing keys after save. No `/api/live/credentials` chrome. No Media Studio maze beyond the Beat 1 `?` disclosure (same-beat inline help; default helper stays the one short line). No playlist editor maze (Beat 2 is an ordered URL list; Beat 3 is current item + `2/5` only). No five-block 720px chrome. No Vite `5173` operator path. No second published port. No YouTube embed / iframe / youtube.com player. No treating outbound as preview metadata (`GET /api/live/preview` title / `is_live` / thumbnail is source preview). Playlist may include VOD items that roll; still not clip-post, not file upload, never Posted / Clip / Tweet / Upload UI.
+No settings pages. No settings maze. No Sign-in. No extra panes beyond these three. No hamburger settings page. No fourth beat. No tabs-as-settings. No clip-post. No clip download. No clip download from the Outbound player. No schedule. No OAuth screens. No Sign-in framing. No “Sign in with X”. No showing keys after save. No `/api/live/credentials` chrome. No Media Studio maze beyond the Beat 1 `?` disclosure (same-beat inline help; default helper stays the one short line). No playlist editor maze (Beat 2 is an ordered URL list; Beat 3 is current item + `2/5` only). No five-block 720px chrome. No Vite `5173` operator path. No second published port. No YouTube embed / iframe / youtube.com player. No treating outbound as preview metadata (`GET /api/live/preview` title / `is_live` / thumbnail is source preview). Playlist may include VOD items that roll; still not clip-post, not file upload, never Posted / Clip / Tweet / Upload UI.
 
 ## Done when
 
-Frontend can ship the three beats against this file without inventing chrome, OAuth, Sign-in framing, or clip UI. Beat 1 is **Keys / Configuration** (default ingest, Advanced off, named key list with Open / Edit / Select / Delete, clickable `?`). Not a Sign-in gate. Do not restomp that panel. Beat 2 is an ordered source-URL list (live or VOD; add / reorder / remove). The selected named key stays across roll. Beat 3 shows the current item + compact position (`2/5`); roll next when the current item ends; Stop stops the session; exhausted playlist is Idle / Stopped, not Error. Frontend can put a KISS **Outbound** player on Beat 3 against this file without inventing chrome (picture + sound of the encoded outbound on `http://127.0.0.1:8788`; not a YouTube embed; not clip; not preview metadata). Operator form factor is one Docker compose on `http://127.0.0.1:8788`.
+Frontend can ship a brain-dead 3-item menu (**Keys** / **Drop link** / **Outbound**) against this file without inventing chrome. Frontend can ship the three beats against this file without inventing chrome, OAuth, Sign-in framing, or clip UI. Beat 1 is **Keys / Configuration** (default ingest, Advanced off, named key list with Open / Edit / Select / Delete, clickable `?`). Not a Sign-in gate. Do not restomp that panel. Beat 2 is an ordered source-URL list (live or VOD; add / reorder / remove). The selected named key stays across roll. Beat 3 shows the current item + compact position (`2/5`); roll next when the current item ends; Stop stops the session; exhausted playlist is Idle / Stopped, not Error. Frontend can put a KISS **Outbound** player on Beat 3 against this file without inventing chrome (picture + sound of the encoded outbound on `http://127.0.0.1:8788`; not a YouTube embed; not clip; not preview metadata). Operator form factor is one Docker compose on `http://127.0.0.1:8788`.
