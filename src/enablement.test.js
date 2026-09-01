@@ -52,10 +52,10 @@ describe("enablement", () => {
     );
   });
 
-  it("Stop when LIVE or Error", () => {
+  it("Stop when Starting, LIVE, or Error", () => {
     assert.equal(canStop({ state: "live" }), true);
     assert.equal(canStop({ state: "error" }), true);
-    assert.equal(canStop({ state: "starting" }), false);
+    assert.equal(canStop({ state: "starting" }), true);
     assert.equal(canStop({ state: "idle" }), false);
     assert.equal(canStop({ state: "stopped" }), false);
   });

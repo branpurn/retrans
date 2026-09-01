@@ -105,7 +105,9 @@ describe("primary-flow chrome lock", () => {
   it("locks Beat 3 sessions list, start {source_urls,key_id}, per-session Stop", () => {
     const beat3 = html.slice(html.indexOf('id="beat-3"'));
     assert.match(html, /Start live retrans/);
-    assert.match(html, /id="stop-btn"[^>]*>Stop</s);
+    assert.doesNotMatch(html, /id="stop-btn"/);
+    assert.match(main, /stop\.textContent = "Stop"/);
+    assert.match(html, />Waiting</);
     assert.match(html, /id="session-list"/);
     assert.match(html, /id="playlist-now"/);
     assert.match(html, /id="drop-another"/);
@@ -204,7 +206,7 @@ describe("primary-flow chrome lock", () => {
     assert.match(main, /nextChrome/);
     assert.match(main, /applyStatus/);
     assert.match(main, /stickSessions/);
-    assert.match(enablement, /state === "live" \|\| state === "error"/);
+    assert.match(enablement, /state === "starting" \|\| state === "live" \|\| state === "error"/);
     assert.match(css, /::placeholder/);
     assert.match(css, /:not\(:placeholder-shown\)/);
     const fields = readFileSync(new URL("./fields.js", import.meta.url), "utf8");
