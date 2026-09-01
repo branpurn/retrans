@@ -8,13 +8,25 @@ Product string: **RETRANS**. Code/repo: `retrans`. Frontend owns the operator UI
 
 `min-height: 100vh` operator console. Do **not** clip helpers with `overflow: hidden` on the console body (`html`, `body`, `#app`, `.body`). Prefer min-height 100vh; allow the body to scroll if needed so Media Studio helpers (including Create Broadcast / no public API) and the Transport helper are never truncated.
 
-1. Top bar 48px (`--bar`) — left `RETRANS`, right status pill: Idle | Preview | LIVE | Stopped | Error. LIVE uses `--live`. Never say Posted, Clip, Tweet, or Upload.
+1. Top bar 48px (`--bar`) — left `RETRANS`, right status pill: Idle | Preview | Starting | LIVE | Stopped | Error. Never say Posted, Clip, Tweet, or Upload.
 2. Body max-width 720px, 24px pad. Five stacked blocks, gap 12 (`--gap`), in this locked order:
 
 ### Status rules
 
 - **Idle-on-poll-fail.** Boot `GET /api/live/status` failure and mid-session status poll / network failures MUST keep the current pill (fresh load = Idle). Never flip the pill to Error for a failed status poll. Never invent helper text like `status failed`.
 - **Error pill** only after a real start failure (HTTP 400 or equivalent start failure) or a usable status payload (`GET /api/live/status` HTTP 200) with nonempty `status.error` / `state === "error"`. Not on status poll fail. Idle + `error: null` (or empty) stays Idle / Preview.
+- **Pill lock.** Exact `data-status` / backend → copy + tokens. Do not invent other labels.
+
+| data-status / backend | Pill copy (exact) | Tokens |
+| --- | --- | --- |
+| idle | Idle | bg `var(--line)`, color `var(--ink)` |
+| preview | Preview | bg `#243447`, color `var(--accent)` |
+| starting | Starting | bg `var(--warn)`, color `#0f1419` |
+| live | LIVE | bg `var(--live)`, color `#fff` |
+| stopped | Stopped | bg `var(--line)`, color `var(--muted)` |
+| error | Error | bg `var(--stop)`, color `#fff` |
+
+- **Mapping.** Backend `starting` → pill Starting (not Preview). Backend `live` → LIVE. Backend `stopped` → Stopped. `--warn` stays `#f59e0b` in Tokens.
 
 ### 1. Paste
 
