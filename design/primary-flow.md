@@ -34,7 +34,10 @@ Sign-in is **not** X OAuth. Sign-in is a one-time Media Studio RTMP save.
 ### Status rules (from layout-v1 Error chrome)
 
 - **Idle-on-poll-fail.** Boot `GET /api/live/status` failure and mid-session status poll / network failures MUST keep the current pill (fresh load = Idle). Never flip the pill to Error for a failed status poll. Never invent helper text like `status failed`.
-- **Error pill** only after a real start failure (HTTP 400 or equivalent) or a usable status payload (`GET /api/live/status` HTTP 200) with nonempty `status.error` / `state === "error"`. Idle + `error: null` (or empty) stays Idle / Preview.
+- **Error pill** only after a real start failure (HTTP 400 or equivalent) or a usable status payload (`GET /api/live/status` HTTP 200) with nonempty `status.error` / `state === "error"`. Idle + `error: null` (or empty) stays Idle / Preview. Never invent Error from a poll fail.
+- **Error sticks until Stop.** After the UI enters Error (start HTTP 400 / equivalent, or usable status with nonempty `status.error` / `state === "error"`), keep the pill Error and the error helper until the operator presses **Stop**. Do **not** auto-flip Error → Idle / Preview / Stopped when a later successful status poll returns `idle` / empty error / no longer `error` (the ~5s auto-clear bug).
+- **Stop clears Error.** `POST /api/live/stop` (or Stop click) is the dismiss path from Error. After Stop succeeds, normal status mapping resumes (Idle / Stopped per existing locks).
+- **Stop enablement.** Stop is enabled while LIVE **or** while Error (so Error can be cleared).
 - **Pill lock.** Exact `data-status` / backend → copy + tokens. Do not invent other labels.
 
 | data-status / backend | Pill copy (exact) | Tokens |
@@ -137,15 +140,17 @@ No RTMP fields on this beat. No start/stop. Preview payload has no RTMP fields �
 | --- | --- |
 | Source | Compact source preview — same card fields as Beat 2 (thumbnail, real `title` when available, host, **LIVE** badge iff `is_live === true`) + the top-bar status pill |
 | Primary | **Start live retrans** — enabled when ready |
-| Danger | **Stop** — enabled **only while LIVE** |
+| Danger | **Stop** — enabled while LIVE **or** Error |
 | Helper | see below |
 
-Ready for Start:
+Ready for Start (does **not** disable Stop on Error):
 
 - preview ok
 - ack already checked (from Beat 2)
 - credentials configured
 - status is not `starting` and not `live`
+
+Stop stays enabled on Error even when Start is not ready. Stop is the only dismiss path from Error.
 
 Start calls `POST /api/live/start` with `{ source_url }` **only**. Do not send `rtmp_url` or `rtmp_key`. Credentials were already saved on Beat 1.
 
@@ -157,7 +162,7 @@ Helper (exact; fully readable, never clipped):
 
 **Not on this beat:** RTMP URL, stream key, destination form, clip, download, schedule, OAuth, settings.
 
-After Start, `GET /api/live/status` drives the pill (`starting` → Starting, then `live` → LIVE). Poll fail stays the current pill (Idle on fresh load).
+After Start, `GET /api/live/status` drives the pill (`starting` → Starting, then `live` → LIVE) except Error, which sticks until Stop. Poll fail stays the current pill (Idle on fresh load). Never invent Error from a poll fail.
 
 ## Live API (Frontend contract)
 
@@ -177,7 +182,7 @@ Responses **never** echo `rtmp_key` or `rtmp_url`. Redact those substrings in an
 
 `POST /api/live/start` does **not** accept destination fields in the operator UI. Destination is the saved credentials.
 
-Keep stop/status as the existing live API. Consume `GET /api/live/preview` for `title` + `is_live`. Status poll fail stays Idle (Error chrome locks above).
+Keep stop/status as the existing live API. Consume `GET /api/live/preview` for `title` + `is_live`. Status poll fail stays Idle (Error chrome locks above). Error sticks until Stop.
 
 ## Tokens
 
