@@ -30,7 +30,31 @@ export function canStart({ previewOk, configured, ack, state }) {
 }
 
 export function canStop({ state }) {
-  return state === "live";
+  return state === "live" || state === "error";
+}
+
+/**
+ * Next chrome after start/stop/status.
+ * Status polls must not clear a real Error (idle+null loopback wipe).
+ * Operator Stop (source "command") may leave Error.
+ */
+export function nextChrome({ backend, error }, result, source) {
+  const currentError = typeof error === "string" ? error : "";
+  if (source === "status") {
+    if (!isUsableStatus(result)) {
+      return { backend, error: currentError };
+    }
+    if (backend === "error" && backendFromResult(result) !== "error") {
+      return { backend: "error", error: currentError };
+    }
+  }
+  if (!result) {
+    return { backend: "error", error: currentError };
+  }
+  return {
+    backend: backendFromResult(result),
+    error: typeof result.error === "string" ? result.error : "",
+  };
 }
 
 export function pillFor({ previewOk, state }) {

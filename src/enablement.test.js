@@ -7,6 +7,7 @@ import {
   canStart,
   canStop,
   isUsableStatus,
+  nextChrome,
   pillFor,
   pillLabel,
   transportHelper,
@@ -39,14 +40,15 @@ describe("enablement", () => {
     assert.equal(canStart({ ...ready, ack: false }), false);
     assert.equal(canStart({ ...ready, state: "live" }), false);
     assert.equal(canStart({ ...ready, state: "starting" }), false);
+    assert.equal(canStart({ ...ready, state: "error" }), true);
   });
 
-  it("Stop only when LIVE", () => {
+  it("Stop when LIVE or Error", () => {
     assert.equal(canStop({ state: "live" }), true);
+    assert.equal(canStop({ state: "error" }), true);
     assert.equal(canStop({ state: "starting" }), false);
     assert.equal(canStop({ state: "idle" }), false);
     assert.equal(canStop({ state: "stopped" }), false);
-    assert.equal(canStop({ state: "error" }), false);
   });
 
   it("pills stay in the locked set", () => {
@@ -115,6 +117,13 @@ describe("enablement", () => {
     ];
     for (const result of failed) {
       assert.equal(isUsableStatus(result), false);
+      const stuck = nextChrome(
+        { backend: "error", error: "source is not a live stream (not_live); VOD and clips are rejected" },
+        result,
+        "status",
+      );
+      assert.equal(stuck.backend, "error");
+      assert.match(stuck.error, /not a live stream/);
     }
     // Chrome stays Idle; transport helper stays the idle copy (applyStatus no-ops).
     assert.equal(pillLabel(pillFor({ previewOk: false, state: "idle" })), "Idle");
@@ -152,6 +161,35 @@ describe("enablement", () => {
       });
       assert.equal(shown, error);
     }
+  });
+
+  it("start 400 NotLiveError then idle status keeps Error; Stop may leave", () => {
+    const notLive =
+      "source is not a live stream (not_live); VOD and clips are rejected";
+    const start400 = { ok: false, error: notLive, httpStatus: 400 };
+    let chrome = nextChrome({ backend: "idle", error: "" }, start400, "command");
+    assert.equal(chrome.backend, "error");
+    assert.equal(chrome.error, notLive);
+    assert.equal(pillLabel(pillFor({ previewOk: true, state: chrome.backend })), "Error");
+    assert.equal(transportHelper(chrome), notLive);
+    assert.equal(canStart({ ...ready, state: chrome.backend }), true);
+    assert.equal(canStop({ state: chrome.backend }), true);
+
+    const idle = { ok: true, state: "idle", error: null, httpStatus: 200 };
+    assert.equal(isUsableStatus(idle), true);
+    assert.equal(backendFromResult(idle), "idle");
+    chrome = nextChrome(chrome, idle, "status");
+    assert.equal(chrome.backend, "error");
+    assert.equal(chrome.error, notLive);
+    assert.equal(pillLabel(pillFor({ previewOk: true, state: chrome.backend })), "Error");
+    assert.equal(transportHelper(chrome), notLive);
+
+    const stopped = { ok: true, state: "stopped", error: null, httpStatus: 200 };
+    chrome = nextChrome(chrome, stopped, "command");
+    assert.equal(chrome.backend, "stopped");
+    assert.notEqual(chrome.backend, "error");
+    assert.equal(pillLabel(pillFor({ previewOk: true, state: chrome.backend })), "Stopped");
+    assert.equal(transportHelper(chrome), "Idle until ready");
   });
 
   it("Error helper redacts rtmp secrets only", () => {
