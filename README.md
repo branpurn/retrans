@@ -10,6 +10,7 @@ Wave 1 operator UI: paste a YouTube live URL → preview → Media Studio RTMP d
 
 Not clip-post. Not VOD. Not file upload. Status language is live only (Idle | Preview | LIVE | Stopped | Error). Never Posted / Clip / Tweet / Upload.
 
+Primary operator UI (three beats): [design/primary-flow.md](design/primary-flow.md)
 Layout: [design/layout-v1.md](design/layout-v1.md)
 
 - [Permission / fair use](docs/permission-fair-use.md)

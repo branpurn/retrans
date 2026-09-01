@@ -1,5 +1,7 @@
 # Wave 1 layout
 
+> Wave 1 five-block chrome is superseded by [design/primary-flow.md](primary-flow.md) for the operator UI (pill/token locks below remain the status-pill reference).
+
 Operator UI for RETRANS. Live retrans YouTube → X. LIVE status language only. Not clip-post.
 
 Product string: **RETRANS**. Code/repo: `retrans`. Frontend owns the operator UI.
