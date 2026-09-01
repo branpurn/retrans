@@ -6,10 +6,15 @@ Product string: **RETRANS**. Code/repo: `retrans`. Frontend owns the operator UI
 
 ## Chrome
 
-100vh, no page scroll. Operator console.
+`min-height: 100vh` operator console. Do **not** clip helpers with `overflow: hidden` on the console body (`html`, `body`, `#app`, `.body`). Prefer min-height 100vh; allow the body to scroll if needed so Media Studio helpers (including Create Broadcast / no public API) and the Transport helper are never truncated.
 
 1. Top bar 48px (`--bar`) — left `RETRANS`, right status pill: Idle | Preview | LIVE | Stopped | Error. LIVE uses `--live`. Never say Posted, Clip, Tweet, or Upload.
 2. Body max-width 720px, 24px pad. Five stacked blocks, gap 12 (`--gap`), in this locked order:
+
+### Status rules
+
+- **Idle-on-poll-fail.** Boot `GET /api/live/status` failure and mid-session status poll / network failures MUST keep the current pill (fresh load = Idle). Never flip the pill to Error for a failed status poll. Never invent helper text like `status failed`.
+- **Error pill** only after a real start failure (HTTP 400 or equivalent start failure) or a usable status payload (`GET /api/live/status` HTTP 200) with nonempty `status.error` / `state === "error"`. Not on status poll fail. Idle + `error: null` (or empty) stays Idle / Preview.
 
 ### 1. Paste
 
@@ -30,7 +35,9 @@ From X Media Studio. Required for Start.
 
 - RTMP URL — text input
 - Stream key — password input; never echo in logs or UI after blur
-- Helper: From X Media Studio
+- Helper: `From X Media Studio`
+- Helper (Create Broadcast / no public API): After Start, still Create Broadcast + Go Live in Media Studio. RETRANS sends the live restream; there is no public API to start the broadcast.
+- Both Media Studio helpers must be fully readable (never clipped).
 
 ### 4. Gate
 
@@ -42,12 +49,17 @@ Unchecked = Start disabled.
 
 - Start live retrans (primary)
 - Stop (danger, enabled only while LIVE)
-- Helper: `Retransmitting live to X` when LIVE; else Idle until preview + destination + ack
+- Helper (exact; fully readable, never clipped):
+  - Default / non-LIVE non-Error: `Idle until preview + destination + ack`
+  - While LIVE: `Retransmitting live to X`
+  - On Error with a nonempty `status.error` / start error string: show that API error string as-is (redact rtmp secrets only). Do not rewrite it.
 
 ## Enablement
 
 - Start enabled only when: preview ok + RTMP URL + stream key + ack checked + status not LIVE
 - Stop enabled only when LIVE
+- Status poll / network / non-OK `GET /api/live/status` does not change the pill and does not invent `status failed`
+- Start HTTP 400 (or equivalent start failure) or usable status with nonempty `status.error` / state error → Error pill + API error string as-is (rtmp secrets redacted only)
 
 ## Tokens
 
