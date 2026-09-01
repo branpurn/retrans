@@ -12,6 +12,7 @@ import {
   transportHelper,
 } from "./enablement.js";
 import { retransApi } from "./retransApi.js";
+import { YOUTUBE_FIRST_HELPER, isPreviewProbeFail, previewPaint } from "./previewChrome.js";
 
 const SIGNIN_HELPER = "Save Media Studio RTMP once. Not X OAuth.";
 
@@ -86,28 +87,25 @@ function showBeat(n) {
   els.beat3.classList.toggle("hidden", n !== 3);
 }
 
-function applyPreview(parsed) {
+function applyPaint(model, parsed) {
   state.parsed = parsed;
-  state.previewOk = Boolean(parsed?.ok);
-  els.pasteHelper.classList.toggle("hidden", parsed?.reason !== "youtube-first");
+  state.previewOk = Boolean(model.previewOk);
+  const helper = model.helper || "";
+  els.pasteHelper.textContent = helper || YOUTUBE_FIRST_HELPER;
+  els.pasteHelper.classList.toggle("hidden", !helper);
 
   for (const card of els.previewCards) {
-    card.classList.toggle("hidden", !state.previewOk);
-    if (!parsed?.ok) continue;
+    card.classList.toggle("hidden", !model.showCard);
     const title = card.querySelector(".preview-title");
     const host = card.querySelector(".preview-host");
     const badge = card.querySelector(".preview-live-badge");
     const thumb = card.querySelector(".preview-thumb");
-    const displayTitle =
-      typeof parsed.title === "string" && parsed.title.trim()
-        ? parsed.title.trim()
-        : "";
-    title.textContent = displayTitle;
-    host.textContent = parsed.host || "";
-    badge.classList.toggle("hidden", parsed.isLive !== true);
-    if (parsed.thumbnail) {
-      thumb.src = parsed.thumbnail;
-      thumb.alt = displayTitle;
+    title.textContent = model.title;
+    host.textContent = model.host;
+    badge.classList.toggle("hidden", model.showLiveBadge !== true);
+    if (model.thumbnail) {
+      thumb.src = model.thumbnail;
+      thumb.alt = model.title;
       thumb.hidden = false;
     } else {
       thumb.removeAttribute("src");
@@ -117,8 +115,12 @@ function applyPreview(parsed) {
   }
 }
 
+function applyPreview(parsed, result = null) {
+  applyPaint(previewPaint({ parsed, result }), parsed);
+}
+
 function clearPreview() {
-  applyPreview(null);
+  applyPaint(previewPaint({ parsed: null, result: null }), null);
 }
 
 function gate() {
@@ -157,36 +159,31 @@ async function runPreview() {
   }
   try {
     const result = await retransApi.preview(parsed.href);
-    if (result.ok) {
-      applyPreview({
-        ...parsed,
-        title: typeof result.title === "string" ? result.title : "",
-        isLive: result.is_live === true,
-      });
-    } else {
-      applyPreview({ ok: false, reason: result.error || "invalid" });
+    if (result.error) result.error = redact(result.error);
+    // 502: Beat 2 Error helper as-is. Hide card. Never Error pill. Never empty title card.
+    applyPreview(parsed, result);
+    if (isPreviewProbeFail(result) || result.httpStatus === 502 || !result.ok) {
+      state.previewOk = false;
     }
   } catch {
-    applyPreview({ ok: false, reason: "invalid" });
+    applyPreview(parsed, { ok: false, httpStatus: 502, error: "" });
+    state.previewOk = false;
   }
   render();
 }
 
 function invalidatePreviewIfSourceChanged() {
-  if (!state.parsed?.ok) {
-    const parsed = parseSourceUrl(readField(els.source));
-    els.pasteHelper.classList.toggle("hidden", parsed.reason !== "youtube-first");
+  const next = parseSourceUrl(readField(els.source));
+  if (state.parsed?.ok && next.ok && next.href === state.parsed.href) {
     render();
     return;
   }
-  const next = parseSourceUrl(readField(els.source));
-  if (!next.ok || next.href !== state.parsed.href) {
+  if (state.parsed?.ok && (!next.ok || next.href !== state.parsed.href)) {
     state.previewOk = false;
     state.parsed = null;
     clearPreview();
   }
-  const parsed = parseSourceUrl(readField(els.source));
-  els.pasteHelper.classList.toggle("hidden", parsed.reason !== "youtube-first");
+  applyPreview(next);
   render();
 }
 

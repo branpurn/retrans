@@ -109,12 +109,14 @@ export async function preview(source_url) {
   const data = await readBody(res);
   let error = typeof data.error === "string" ? data.error : "";
   if (error) error = redactSecrets(error);
-  if (!res.ok && !error) error = "preview failed";
+  // 502: keep API error as-is (possibly empty). Do not invent helper copy here.
+  if (!res.ok && res.status !== 502 && !error) error = "preview failed";
+  const probeFail = res.status === 502;
   return {
-    ok: Boolean(data.ok),
+    ok: res.ok && Boolean(data.ok) && !probeFail,
     source_url: typeof data.source_url === "string" ? data.source_url : "",
     title: typeof data.title === "string" ? data.title : "",
-    is_live: Boolean(data.is_live),
+    is_live: data.is_live === true,
     error,
     httpStatus: res.status,
   };

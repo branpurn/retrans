@@ -74,13 +74,27 @@ describe("primary-flow chrome lock", () => {
   });
 
   it("does not paint parseSourceUrl as display before preview API", () => {
+    const chrome = readFileSync(new URL("./previewChrome.js", import.meta.url), "utf8");
     assert.doesNotMatch(main, /applyPreview\(\s*parseSourceUrl/);
     assert.match(main, /writeField\(els\.source, result\.source_url\)/);
     assert.match(main, /runPreview\(\)/);
     assert.match(main, /retransApi\.preview\(/);
-    assert.match(main, /result\.is_live === true/);
+    assert.match(chrome, /result\.is_live === true/);
     assert.doesNotMatch(main, /YouTube source/);
     assert.doesNotMatch(main, /YouTube live/);
+    assert.doesNotMatch(chrome, /YouTube source/);
+  });
+
+  it("consumes primary-flow 502 chrome: helper as-is, hide card, Idle pill", () => {
+    const design = readFileSync(new URL("../design/primary-flow.md", import.meta.url), "utf8");
+    assert.match(design, /502.*ok:\s*false.*error/s);
+    assert.match(design, /Error helper/);
+    assert.match(design, /as-is/);
+    assert.match(main, /previewPaint/);
+    assert.match(main, /isPreviewProbeFail/);
+    assert.match(main, /Never Error pill/);
+    assert.doesNotMatch(main, /error\s*=\s*["']status failed["']/);
+    assert.match(main, /applyPreview\(parsed, result\)/);
   });
 
   it("Start sends source_url only; no clip UI; Vite loopback 8788", () => {
