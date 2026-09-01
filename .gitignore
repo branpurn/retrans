@@ -9,5 +9,9 @@ build/
 .venv/
 venv/
 .env
+.env.*
 *.mp4
 *.flv
+node_modules/
+.DS_Store
+*.log
