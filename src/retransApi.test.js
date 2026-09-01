@@ -17,6 +17,7 @@ describe("retransApi lock", () => {
     assert.match(src, /\/api\/live\/stop/);
     assert.match(src, /\/api\/live\/status/);
     assert.match(src, /\/api\/live\/credentials/);
+    assert.match(src, /\/api\/live\/preview/);
     assert.match(src, /source_url/);
     assert.match(src, /rtmp_url/);
     assert.match(src, /rtmp_key/);

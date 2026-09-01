@@ -5,6 +5,7 @@ LAN / hotspot address) is refused with a non-zero exit. Responses never
 echo rtmp_url or rtmp_key. There is no /api/clip route.
 
 Sign in: PUT /api/live/credentials (or env). Drop link: source_url.
+Preview: GET /api/live/preview?source_url= (yt-dlp title + is_live; no ffmpeg).
 Retrans: POST /api/live/start (fills RTMP from store when body omits it).
 """
 
@@ -19,7 +20,7 @@ import threading
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse, urlsplit
 
 from retrans.config import DEFAULT_PORT, HOST_ENV, LOOPBACK_HOST, PORT_ENV, redact
 from retrans.credentials import (
@@ -30,6 +31,7 @@ from retrans.credentials import (
 )
 from retrans.ingest import NotLiveError, ResolveError, StreamResolver
 from retrans.outputs.x import RestreamError, XLiveRestream, join_rtmp_destination
+from retrans.sources.youtube import is_youtube_url
 
 MAX_BODY = 64 * 1024
 VALID_STATES = ("idle", "starting", "live", "error", "stopped")
@@ -264,16 +266,29 @@ def validate_credentials_payload(payload: Any) -> tuple[str, str] | str:
     return url, key
 
 
-def validate_source_url(payload: Any) -> str | None:
-    if not isinstance(payload, dict):
+def parse_http_source_url(raw: str | None) -> str | None:
+    """Accept a non-empty http(s) URL. None if missing or not http(s)."""
+    if not isinstance(raw, str) or not raw.strip():
         return None
-    source = _nonempty_str(payload, "source_url")
-    if source is None:
-        return None
+    source = raw.strip()
     parsed = urlparse(source)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return None
     return source
+
+
+def validate_source_url(payload: Any) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    return parse_http_source_url(_nonempty_str(payload, "source_url"))
+
+
+def preview_query_source_url(path_with_query: str) -> str | None:
+    """Return source_url from GET query, or None if the key is absent."""
+    qs = parse_qs(urlsplit(path_with_query).query, keep_blank_values=True)
+    if "source_url" not in qs:
+        return None
+    return (qs["source_url"][0] or "").strip()
 
 
 def _override_rtmp(payload: dict[str, Any]) -> tuple[str, str] | str | None:
@@ -373,14 +388,46 @@ def make_handler(
             self.end_headers()
 
         def do_GET(self) -> None:
-            path = self.path.split("?", 1)[0]
+            path = urlsplit(self.path).path
             if path == "/api/live/credentials":
                 self._send(200, {"ok": True, "configured": is_configured()})
+                return
+            if path == "/api/live/preview":
+                self._preview()
                 return
             if path != "/api/live/status":
                 self._send(404, {"ok": False, "error": "not found"})
                 return
             self._send(200, controller.public_status())
+
+        def _preview(self) -> None:
+            """Drop-link preview: yt-dlp title + live_status. No ffmpeg / restream."""
+            raw = preview_query_source_url(self.path)
+            if raw is None or raw == "":
+                self._send(400, {"ok": False, "error": "missing source_url"})
+                return
+            source = parse_http_source_url(raw)
+            if source is None:
+                self._send(400, {"ok": False, "error": "invalid source_url"})
+                return
+            if not is_youtube_url(source):
+                self._send(400, {"ok": False, "error": "YouTube first"})
+                return
+            title = ""
+            is_live = False
+            try:
+                title, is_live = stream_resolver.preview_meta(source)
+            except ResolveError:
+                title, is_live = "", False
+            self._send(
+                200,
+                {
+                    "ok": True,
+                    "source_url": source,
+                    "title": title,
+                    "is_live": is_live,
+                },
+            )
 
         def do_PUT(self) -> None:
             path = self.path.split("?", 1)[0]

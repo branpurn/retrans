@@ -5,7 +5,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from retrans.ingest import NotLiveError, ResolveError, StreamResolver, status_is_live
+from retrans.ingest import (
+    NotLiveError,
+    ResolveError,
+    StreamResolver,
+    parse_preview_print,
+    preview_is_live,
+    status_is_live,
+)
 
 PAGE = "https://www.youtube.com/watch?v=abc"
 
@@ -137,3 +144,67 @@ def test_require_live_wraps_probe_failure():
 
     with pytest.raises(NotLiveError, match="not live|VOD"):
         StreamResolver(run=run).require_live(PAGE)
+
+
+def _print_preview_run(title: str, status: str):
+    def run(argv, **_kwargs):
+        assert argv[0] == "yt-dlp"
+        assert "--print" in argv
+        assert "title" in argv
+        assert "live_status" in argv
+        assert "--no-playlist" in argv
+        assert "--no-warnings" in argv
+        assert "-g" not in argv
+        assert PAGE in argv
+        return _ok(f"{title}\n{status}\n")
+
+    return run
+
+
+def test_preview_meta_live_title():
+    title, is_live = StreamResolver(run=_print_preview_run("Briefing", "is_live")).preview_meta(
+        PAGE
+    )
+    assert title == "Briefing"
+    assert is_live is True
+
+
+@pytest.mark.parametrize("status", ["not_live", "was_live", "is_upcoming", "true", "NA", ""])
+def test_preview_meta_is_live_only_for_is_live(status: str):
+    title, is_live = StreamResolver(run=_print_preview_run("Talk", status)).preview_meta(PAGE)
+    assert title == "Talk"
+    assert is_live is False
+
+
+def test_preview_meta_empty_title_when_na():
+    title, is_live = StreamResolver(run=_print_preview_run("NA", "is_live")).preview_meta(PAGE)
+    assert title == ""
+    assert is_live is True
+
+
+def test_preview_meta_does_not_fetch_stream_url():
+    def run(argv, **_kwargs):
+        if "-g" in argv:
+            raise AssertionError("preview_meta must not run yt-dlp -g")
+        if argv[0] != "yt-dlp":
+            raise AssertionError("preview_meta must not start ffmpeg")
+        return _ok("Title\nis_live\n")
+
+    title, is_live = StreamResolver(run=run).preview_meta(PAGE)
+    assert title == "Title"
+    assert is_live is True
+
+
+def test_preview_meta_wraps_probe_failure():
+    def run(argv, **_kwargs):
+        raise subprocess.CalledProcessError(1, argv, stderr="unavailable")
+
+    with pytest.raises(ResolveError, match="preview probe failed"):
+        StreamResolver(run=run).preview_meta(PAGE)
+
+
+def test_parse_preview_print_helpers():
+    assert parse_preview_print("Hello\nis_live\n") == ("Hello", "is_live")
+    assert parse_preview_print("NA\nnot_live\n") == ("", "not_live")
+    assert preview_is_live("is_live") is True
+    assert preview_is_live("true") is False

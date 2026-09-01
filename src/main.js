@@ -130,8 +130,27 @@ function render() {
   });
 }
 
-function runPreview() {
-  applyPreview(parseSourceUrl(els.source.value));
+async function runPreview() {
+  const parsed = parseSourceUrl(els.source.value);
+  if (!parsed.ok) {
+    applyPreview(parsed);
+    render();
+    return;
+  }
+  try {
+    const result = await retransApi.preview(parsed.href);
+    if (result.ok) {
+      applyPreview({
+        ...parsed,
+        title: result.title,
+        isLive: Boolean(result.is_live),
+      });
+    } else {
+      applyPreview({ ok: false, reason: result.error || "invalid" });
+    }
+  } catch {
+    applyPreview({ ok: false, reason: "invalid" });
+  }
   render();
 }
 
@@ -160,6 +179,7 @@ function applyBackend(result) {
   if (result.source_url && !state.previewOk) {
     els.source.value = result.source_url;
     applyPreview(parseSourceUrl(result.source_url));
+    runPreview();
   }
   if (state.backend === "starting" || state.backend === "live") startPolling();
   else stopPolling();

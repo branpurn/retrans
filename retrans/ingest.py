@@ -26,6 +26,10 @@ Runner = Callable[..., subprocess.CompletedProcess]
 # yt-dlp live_status / --print is_live values that mean "on air now".
 _LIVE_STATUS_OK = frozenset({"is_live"})
 _LIVE_BOOL_OK = frozenset({"true", "1", "yes"})
+_LIVE_STATUS_TOKENS = frozenset(
+    {"is_live", "not_live", "was_live", "is_upcoming", "post_live", "NA"}
+)
+_UNKNOWN_TITLE = frozenset({"", "na", "n/a", "none", "null", "nan"})
 
 
 def status_is_live(live_status: str, is_live: object = None) -> bool:
@@ -40,6 +44,32 @@ def status_is_live(live_status: str, is_live: object = None) -> bool:
     if isinstance(is_live, str) and is_live.strip().lower() in _LIVE_BOOL_OK:
         return True
     return False
+
+
+def preview_is_live(live_status: str) -> bool:
+    """Drop-link preview: true only when yt-dlp live_status is exactly is_live."""
+    return (live_status or "").strip() == "is_live"
+
+
+def clean_preview_title(title: str) -> str:
+    """Empty string when yt-dlp has no title (NA / missing)."""
+    text = (title or "").strip()
+    if text.lower() in _UNKNOWN_TITLE:
+        return ""
+    return text
+
+
+def parse_preview_print(stdout: str) -> tuple[str, str]:
+    """Parse yt-dlp --print title --print live_status stdout → (title, live_status)."""
+    lines = [line.strip() for line in (stdout or "").splitlines() if line.strip()]
+    if not lines:
+        return "", ""
+    if len(lines) == 1:
+        only = lines[0]
+        if only in _LIVE_STATUS_TOKENS:
+            return "", only
+        return clean_preview_title(only), ""
+    return clean_preview_title("\n".join(lines[:-1])), lines[-1]
 
 
 class StreamResolver:
@@ -74,6 +104,36 @@ class StreamResolver:
             if candidate:
                 return candidate
         return ""
+
+    def preview_meta(self, page_url: str) -> tuple[str, bool]:
+        """Return (title, is_live) via yt-dlp --print. Never starts ffmpeg.
+
+        is_live is true only when live_status is exactly ``is_live``.
+        Title is "" when unknown. Does not run yt-dlp -g or a restream worker.
+        """
+        try:
+            proc = self._run(
+                [
+                    "yt-dlp",
+                    "--print",
+                    "title",
+                    "--print",
+                    "live_status",
+                    "--no-playlist",
+                    "--no-warnings",
+                    page_url,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except FileNotFoundError as exc:
+            raise ResolveError("yt-dlp is not installed") from exc
+        except subprocess.CalledProcessError as exc:
+            stderr = (exc.stderr or "").strip()
+            raise ResolveError(f"yt-dlp preview probe failed: {stderr}") from exc
+        title, status = parse_preview_print(proc.stdout or "")
+        return title, preview_is_live(status)
 
     def is_currently_live(self, page_url: str) -> bool:
         """True when yt-dlp reports live_status is_live (or is_live true)."""

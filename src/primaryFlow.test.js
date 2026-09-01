@@ -49,6 +49,7 @@ describe("primary-flow chrome lock", () => {
     assert.match(html, /YouTube first/);
     assert.match(main, /showBeat\(3\)/);
     assert.match(main, /canContinue/);
+    assert.match(main, /retransApi\.preview\(/);
   });
 
   it("locks Beat 3 Retrans start/stop and helpers", () => {
