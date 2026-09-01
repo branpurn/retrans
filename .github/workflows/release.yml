@@ -88,15 +88,94 @@ jobs:
             docker push "${IMAGE}:latest"
           fi
 
+      # Visibility PUT is best-effort (GITHUB_TOKEN often cannot flip it).
+      # The gate is an unauthenticated GHCR manifest GET for the published tag.
+      # Bare GET is GHCR's 401 challenge; public means an anonymous token
+      # (no GITHUB_TOKEN, no docker login, no PAT) can GET the manifest as HTTP 200.
       - name: Public package (unauthenticated pull)
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh api --method PUT \
-            -H "Accept: application/vnd.github+json" \
-            "/users/branpurn/packages/container/retrans/visibility" \
-            -f visibility=public
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          IMAGE_REPO="branpurn/retrans"
+          MANIFEST_URL="https://ghcr.io/v2/branpurn/retrans/manifests/${TAG}"
+          ACCEPT="application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json"
+
+          put_rc=0
+          put_out="$(
+            gh api --method PUT \
+              -H "Accept: application/vnd.github+json" \
+              "/users/branpurn/packages/container/retrans/visibility" \
+              -f visibility=public 2>&1
+          )" || put_rc=$?
+          if [[ "$put_rc" -eq 0 ]]; then
+            echo "GITHUB_TOKEN visibility PUT accepted."
+          else
+            echo "GITHUB_TOKEN visibility PUT did not set public (exit ${put_rc}). That is common."
+            printf '%s\n' "$put_out"
+          fi
+
+          docker logout ghcr.io >/dev/null 2>&1 || true
+
+          token_body="$(mktemp)"
+          manifest_body="$(mktemp)"
+          code=""
+          token_code=""
+          attempt=1
+          while [[ "$attempt" -le 5 ]]; do
+            token_code="$(
+              env -u GITHUB_TOKEN -u GH_TOKEN -u GH_ENTERPRISE_TOKEN \
+                curl -sS --netrc-file /dev/null \
+                  -o "$token_body" -w "%{http_code}" \
+                  "https://ghcr.io/token?service=ghcr.io&scope=repository:${IMAGE_REPO}:pull"
+            )"
+            token="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("token",""))' "$token_body" 2>/dev/null || true)"
+
+            if [[ -n "$token" ]]; then
+              code="$(
+                env -u GITHUB_TOKEN -u GH_TOKEN -u GH_ENTERPRISE_TOKEN \
+                  curl -sS --netrc-file /dev/null \
+                    -H "Authorization: Bearer ${token}" \
+                    -H "Accept: ${ACCEPT}" \
+                    -o "$manifest_body" -w "%{http_code}" \
+                    "$MANIFEST_URL"
+              )"
+            else
+              code="$(
+                env -u GITHUB_TOKEN -u GH_TOKEN -u GH_ENTERPRISE_TOKEN \
+                  curl -sS --netrc-file /dev/null \
+                    -H "Accept: ${ACCEPT}" \
+                    -o "$manifest_body" -w "%{http_code}" \
+                    "$MANIFEST_URL"
+              )"
+            fi
+
+            echo "Unauthenticated GHCR manifest GET ${MANIFEST_URL} -> HTTP ${code} (token endpoint HTTP ${token_code}, attempt ${attempt})"
+            if [[ "$code" == "200" ]]; then
+              echo "Package is anonymously pullable (HTTP 200)."
+              exit 0
+            fi
+            # 401 after a failed PUT: package is still private; GITHUB_TOKEN cannot flip it.
+            if [[ "$code" == "401" && "$put_rc" -ne 0 ]]; then
+              break
+            fi
+            attempt=$((attempt + 1))
+            if [[ "$attempt" -le 5 ]]; then
+              sleep 3
+            fi
+          done
+
+          echo "Wanted HTTP 200 from unauthenticated pull of ${MANIFEST_URL}."
+          echo "curl evidence: GET ${MANIFEST_URL} returned HTTP ${code}"
+          echo "token endpoint HTTP ${token_code}"
+          printf '%s\n' "$(head -c 500 "$manifest_body")"
+          if [[ "$code" == "401" ]]; then
+            echo "branpurn/retrans GHCR package must be set Public in package settings:"
+            echo "  https://github.com/users/branpurn/packages/container/retrans/settings"
+            echo "GITHUB_TOKEN cannot flip visibility (PUT exit ${put_rc}). Do not add a PAT."
+          fi
+          exit 1
 
       - name: GitHub Release
         if: github.ref_type == 'tag'
