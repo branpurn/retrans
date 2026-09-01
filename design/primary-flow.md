@@ -14,7 +14,7 @@ RETRANS operator. Live YouTube → X. Three beats. Localhost.
 2. Drop link
 3. Retrans
 
-True **LIVE** only. Not clip-post. Not VOD. Not file upload. Never Posted / Clip / Tweet / Upload.
+**LIVE** first. Playlist on Drop link / Retrans may include **live or VOD** page URLs that roll (YouTube first). Not clip-post. Not file upload. Never Posted / Clip / Tweet / Upload.
 
 Bind and proxy **127.0.0.1 only**. Never `0.0.0.0`, LAN, or hotspot.
 
@@ -41,6 +41,7 @@ Beat 1 is **Keys / Configuration** — named Media Studio stream-key save (RTMP 
 - **Stop clears Error.** `POST /api/live/stop` (or Stop click) is the dismiss path from Error. Body `{ session_id }` **or** `{ key_id }`. After Stop succeeds, normal status mapping resumes (Idle / Stopped per existing locks).
 - **Stop enablement.** Stop is enabled while that session is LIVE **or** Error (so Error can be cleared). Concurrent sessions: each Beat 3 row has its own Stop.
 - **Pill lock.** Exact `data-status` / backend → copy + tokens. Do not invent other labels. Beat 3 list pills are **per** `sessions[]` entry. Top-bar pill: Error if any session is Error; else LIVE if any is live; else Starting if any is starting; else Idle / Stopped / Preview per existing mapping.
+- **Natural playlist end is not Error.** When the current item ends (live ends or VOD finishes) and the playlist is empty / exhausted (no next URL), map to Idle / Stopped per existing status locks. Do **not** invent Error from that natural end. Mid-item start/status Error still sticks until Stop.
 
 | data-status / backend | Pill copy (exact) | Tokens |
 | --- | --- | --- |
@@ -52,6 +53,16 @@ Beat 1 is **Keys / Configuration** — named Media Studio stream-key save (RTMP 
 | error | Error | bg `var(--stop)`, color `#fff` |
 
 `--warn` stays `#f59e0b`.
+
+## Playlist chrome (KISS)
+
+Chrome lock for Drop link / Retrans. Backend ingest owns roll. No extra routes. Do **not** restomp Keys / Configuration (Beat 1).
+
+1. **Ordered source-URL list** on Beat 2 (Drop link). Operator can add / reorder / remove page URLs. Items may be **live or VOD** (YouTube first). Not clip UI. Not file upload. Not Sign-in.
+2. **Selected named key stays** for the whole playlist run (same `key_id` across roll). Do not force re-Select on each item.
+3. When the **current** item ends (live ends or VOD finishes), **roll to the next** URL in order automatically with that same named key. **Stop** still stops the session. Empty / exhausted playlist → Idle / Stopped per existing status locks. Do not invent Error from a natural end.
+4. Keep 3-beat 480px. Beat 3 shows the current item + compact playlist position (e.g. `2/5`) without a settings maze. Preview / LIVE badge rules still apply per current item (LIVE badge iff `is_live === true` on 200 ok).
+5. Product “True LIVE only / Not VOD” is softened only so the playlist may include VOD items that roll. Still **not** clip-post, not file upload, never Posted / Clip / Tweet / Upload UI.
 
 ## Boot / routing
 
@@ -123,12 +134,15 @@ No extra Media Studio maze beyond this `?` disclosure. No settings page. No “S
 
 ## Beat 2 — Drop link
 
+Ordered **source-URL list** on this beat. Operator can add / reorder / remove page URLs. Items may be **live or VOD** (YouTube first). Not clip UI. Not file upload. Not Sign-in. Not a playlist editor maze — compact list inside the 480px beat.
+
 | Element | Rule |
 | --- | --- |
 | Title | `Drop link` |
-| Field | Single large URL field. Placeholder: `Paste YouTube live URL` |
-| Preview | On blur / Enter, or a Preview control — preview card (fields below) |
-| Destination | Compact named-key picker — unused keys only (names from `GET /api/live/keys`; in-use from `status.sessions[]`) |
+| Playlist | Ordered list of page URLs. Add / reorder / remove. Live or VOD. Compact — stays in 480px. No clip picker. No file upload. |
+| Field | Add a page URL to the list. Placeholder: `Paste YouTube URL` (live or VOD). Large field. |
+| Preview | Per item: on blur / Enter, or a Preview control — preview card (fields below). LIVE badge iff `is_live === true` on 200 ok for **that** item. |
+| Destination | Compact named-key picker — unused keys only (names from `GET /api/live/keys`; in-use from `status.sessions[]`). The **selected** named key from Keys / Configuration **stays** for the whole playlist run (same `key_id` across roll). Do not force re-Select on each item. |
 | Gate | Checkbox, exact copy: `I have permission or fair use to retransmit this live.` |
 | Primary | **Continue** (or **Next**) |
 
@@ -154,7 +168,7 @@ When the source is **VOD / not live** (`GET /api/live/preview` **200 ok** and `i
 
 - **No LIVE badge** (QA expected that).
 - Still show the preview card with thumbnail + title/host when available (card ok; preview ok for Continue gating).
-- Continue/Start stay gated by preview-ok rules already in this file (live-first product: non-live may fail Start with API error — do not add clip UI).
+- Continue/Start stay gated by preview-ok rules already in this file. VOD (`is_live === false` on 200 ok) is a valid playlist item (rolls; no LIVE badge). Do not add clip UI. Do not fail Start solely because an item is VOD.
 
 When `GET /api/live/preview` returns **502** `{ ok: false, error: "…" }` (yt-dlp fail / probe fail / off-air — same route as the Live API table; not a second preview path) or an equivalent non-OK probe fail from that endpoint:
 
@@ -166,9 +180,10 @@ When `GET /api/live/preview` returns **502** `{ ok: false, error: "…" }` (yt-d
 
 Enable Continue only when **all** are true:
 
-- preview ok
+- playlist has at least one page URL
+- every listed URL is preview ok (200 ok; live or VOD)
 - ack checked
-- a named key that is **not** already in a live/starting session is selected (names from `GET /api/live/keys`; in-use from `status.sessions[]`)
+- a named key that is **not** already in a live/starting session is selected (names from `GET /api/live/keys`; in-use from `status.sessions[]`). That same `key_id` stays for the whole playlist run.
 
 YouTube first. Non-YouTube: helper `YouTube first` (exact). Other URLs stay not-ok for preview.
 
@@ -178,29 +193,33 @@ No RTMP fields on this beat. No start/stop. Preview payload has no RTMP fields �
 
 ## Beat 3 — Retrans
 
-Keep three beats and 480px. Concurrent restreams live on this beat (not a fourth page). One named key per restream. Operator can run multiple live sources at once.
+Keep three beats and 480px. Concurrent restreams live on this beat (not a fourth page). One named key per restream / playlist run. The selected named key **stays** for the whole playlist run (same `key_id` across roll). Do not force re-Select on each item. Operator can run multiple playlist sessions at once (unused keys).
 
 | Element | Rule |
 | --- | --- |
-| Sessions | Compact list from `status.sessions[]`: source + **named** key + per-session pill/status + **Stop** |
-| Source | Compact source preview for the current start — same card fields as Beat 2 (thumbnail, real `title` when available, host, **LIVE** badge iff `is_live === true`) + the top-bar status pill |
+| Sessions | Compact list from `status.sessions[]`: current source + compact playlist position (e.g. `2/5`) + **named** key + per-session pill/status + **Stop** |
+| Source | Compact source preview for the **current** item — same card fields as Beat 2 (thumbnail, real `title` when available, host, **LIVE** badge iff `is_live === true` on 200 ok for the current item) + playlist position (`2/5`) + the top-bar status pill. No playlist editor maze on this beat. |
 | Primary | **Start live retrans** — enabled when ready |
-| Another | **Drop another** / back to Beat 2 using an unused named key. If none unused, helper to add a key → Beat 1 |
-| Danger | **Stop** — per session, enabled while that session is LIVE **or** Error |
+| Another | **Drop another** / back to Beat 2 using an unused named key (a new playlist run). If none unused, helper to add a key → Beat 1 |
+| Danger | **Stop** — per session, stops the playlist run (not skip-current-only). Enabled while that session is LIVE **or** Error |
 | Helper | see below |
 
 Ready for Start (does **not** disable Stop on Error / other live sessions):
 
-- preview ok
+- playlist preview ok (at least one URL; every listed URL 200 ok — live or VOD)
 - ack already checked (from Beat 2)
-- selected unused named key (`key_id`)
+- selected unused named key (`key_id`) — same key for the whole run
 - that key is not already `starting` or `live` in `sessions[]`
 
 Stop stays enabled on a session in Error even when Start is not ready. Stop is the only dismiss path from that session’s Error.
 
-Start calls `POST /api/live/start` with `{ source_url, key_id }` **only**. Do not send `rtmp_url` or `rtmp_key`. The named key was already saved on Beat 1.
+Start calls `POST /api/live/start` with `{ source_urls, key_id }` (ordered list + named key). A single URL is a one-item `source_urls` list. Bare `source_url` + `key_id` may remain as a one-item playlist (Backend ingest owns that path). Do not send `rtmp_url` or `rtmp_key`. The named key was already saved / selected on Beat 1. Same `key_id` for the whole run.
 
-Stop calls `POST /api/live/stop` with `{ session_id }` **or** `{ key_id }`.
+**Roll next.** When the **current** item ends (live ends or VOD finishes), Backend ingest rolls to the **next** URL in order automatically with that same named key. Chrome consumes status: current `source_url` / `source_index` updates. Do not re-Select. Do not invent a next-item route.
+
+**Stop** still stops the session (the playlist run). `POST /api/live/stop` with `{ session_id }` **or** `{ key_id }`.
+
+**Empty / exhausted playlist** (current item ends and there is no next URL): Idle / Stopped per existing status locks. Do **not** invent Error from a natural live end or VOD finish.
 
 Helper (exact; fully readable, never clipped):
 
@@ -216,7 +235,7 @@ After Start, `GET /api/live/status` (`sessions[]`) drives per-session pills (`st
 
 Operator path is **one Docker compose** → `http://127.0.0.1:8788` (same origin UI + `/api`). Vite may still proxy `/api` → `http://127.0.0.1:8788` for Frontend work; operators open 8788. Never `0.0.0.0`. No `/api/clip` route. No clip UI. No `/api/live/credentials` chrome — Keys / Configuration consumes `/api/live/keys`.
 
-These routes are the lock. Do not invent extra routes beyond keys list/add/delete + start/stop/status/preview.
+These routes are the lock. Do not invent extra routes beyond keys list/add/delete + start/stop/status/preview. Playlist chrome is start/status fields only (no playlist editor route).
 
 | Method | Path | Body / response |
 | --- | --- | --- |
@@ -224,14 +243,14 @@ These routes are the lock. Do not invent extra routes beyond keys list/add/delet
 | `PUT` | `/api/live/keys` | Add/update a named key (Add + Save, and Open / Edit Save). Body: stream key + optional `name` + optional `rtmp_url` override. Omit `rtmp_url` to use default ingest `rtmps://va.pscp.tv:443/x`. On update of an existing named key, an empty / omitted stream-key field means keep the stored key unless a new key is typed. `200` success (id + name only). **Never** echo the key. |
 | `DELETE` | `/api/live/keys/<id>` | Remove a named key. `200` success. **Never** echo secrets. |
 | `GET` | `/api/live/preview` | Query `source_url`. `200 { "ok": true, "source_url": "…", "title": "…", "is_live": true \| false }`. Title from yt-dlp `-J` `title` (may be `""` if unknown). `is_live` true when `live_status` is `is_live` or JSON `is_live` is true. Confirmed `not_live` / `was_live` stay `200` + title + `is_live:false`. YouTube first. `400 { "ok": false, "error": "…" }` missing/invalid URL. `502 { "ok": false, "error": "…" }` when yt-dlp fails (not `200` empty/false). Drop-link chrome for that 502: Beat 2 Preview (hide card; `error` as-is; Continue disabled; pill stays Idle — not Transport Error). No ffmpeg / restream. Never `rtmp_url` / `rtmp_key` / `destination`. |
-| `POST` | `/api/live/start` | `{ "source_url":"…", "key_id":"…" }` **only** → `200 { "ok": true, "state": "starting" }` (process up → later status `live`). Never `rtmp_url` / `rtmp_key`. `400` missing/invalid / not a live stream. `409` key already in a live/starting session. |
+| `POST` | `/api/live/start` | Chrome lock: `{ "source_urls":["…", "…"], "key_id":"…" }` — ordered page URLs (live or VOD) + the selected named key. One URL = one-item `source_urls` list. Bare `{ "source_url":"…", "key_id":"…" }` may remain as a one-item playlist (Backend ingest owns that path). → `200 { "ok": true, "state": "starting" }` (process up → later status `live`; roll updates current `source_url` / `source_index`). Never `rtmp_url` / `rtmp_key`. `400` missing/invalid / empty `source_urls`. Do **not** `400` `source_urls` solely because an item is VOD. `409` key already in a live/starting session. Same `key_id` for the whole run — do not re-Select per item. |
 | `POST` | `/api/live/stop` | `{ "session_id":"…" }` **or** `{ "key_id":"…" }` → `200 { "ok": true, "state": "stopped" }` (also `200`/`ok` if that session already idle) |
 | `GET` | `/api/live/preview` | Query `source_url`. `127.0.0.1:8788`. Response `{ "ok", "source_url", "title", "is_live" }` **only**. No `rtmp_url` / `rtmp_key`. Never echo secrets. **LIVE** badge iff `is_live === true` on 200 ok. Show real `title` (not a synthetic `YouTube source <id>` placeholder). Same-route **502** `{ ok: false, error }` chrome: Beat 2 Preview (hide card; no LIVE badge; `error` as-is; Continue disabled; pill stays Idle). |
-| `GET` | `/api/live/status` | `200` includes `sessions[]` (concurrent restreams): `{ session_id, key_id, name, source_url, state, error }` — names only, never keys. `state` is `idle`\|`starting`\|`live`\|`error`\|`stopped`. Pill / Error-stick apply **per session** where chrome shows them. Never echo `rtmp_key` or `rtmp_url`. |
+| `GET` | `/api/live/status` | `200` includes `sessions[]` (concurrent restreams / playlist runs): `{ session_id, key_id, name, source_url, source_index, state, error }` — names only, never keys. `source_url` is the **current** item. `source_index` is the chrome lock (0-based current item). Beat 3 compact position is `{source_index + 1}/{n}` (e.g. `2/5`) using the ordered list chrome already sent. `state` is `idle`\|`starting`\|`live`\|`error`\|`stopped`. Exhausted playlist → `idle` / `stopped`, not Error. Pill / Error-stick apply **per session** where chrome shows them. Never echo `rtmp_key` or `rtmp_url`. Never echo secrets. |
 
 Responses **never** echo `rtmp_key` or `rtmp_url` (or the key value). Redact those substrings in any error string shown in the UI. `GET` never returns `rtmp_key` / `rtmp_url`.
 
-`POST /api/live/start` does **not** accept raw destination fields. Destination is the selected named `key_id`.
+`POST /api/live/start` does **not** accept raw destination fields. Destination is the selected named `key_id` (same `key_id` for the whole playlist run).
 
 Consume `GET /api/live/preview` for `title` + `is_live`. Status poll fail stays Idle (Error chrome locks above). Error sticks until Stop.
 
@@ -258,8 +277,8 @@ Reuse [layout-v1.md](layout-v1.md) `:root` tokens:
 
 ## Out of primary
 
-No settings pages. No clip-post. No clip download. No schedule. No OAuth screens. No Sign-in framing. No “Sign in with X”. No showing keys after save. No `/api/live/credentials` chrome. No Media Studio maze beyond the Beat 1 `?` disclosure (same-beat inline help; default helper stays the one short line). No five-block 720px chrome. No Vite `5173` operator path. No second published port.
+No settings pages. No clip-post. No clip download. No schedule. No OAuth screens. No Sign-in framing. No “Sign in with X”. No showing keys after save. No `/api/live/credentials` chrome. No Media Studio maze beyond the Beat 1 `?` disclosure (same-beat inline help; default helper stays the one short line). No playlist editor maze (Beat 2 is an ordered URL list; Beat 3 is current item + `2/5` only). No five-block 720px chrome. No Vite `5173` operator path. No second published port. Playlist may include VOD items that roll; still not clip-post, not file upload, never Posted / Clip / Tweet / Upload UI.
 
 ## Done when
 
-Frontend can ship the three beats against this file without inventing chrome, OAuth, Sign-in framing, or clip UI. Beat 1 is **Keys / Configuration** (default ingest, Advanced off, named key list with Open / Edit / Select / Delete, clickable `?`). Not a Sign-in gate. Beat 3 is concurrent `sessions[]` (one named key each). Operator form factor is one Docker compose on `http://127.0.0.1:8788`.
+Frontend can ship the three beats against this file without inventing chrome, OAuth, Sign-in framing, or clip UI. Beat 1 is **Keys / Configuration** (default ingest, Advanced off, named key list with Open / Edit / Select / Delete, clickable `?`). Not a Sign-in gate. Do not restomp that panel. Beat 2 is an ordered source-URL list (live or VOD; add / reorder / remove). The selected named key stays across roll. Beat 3 shows the current item + compact position (`2/5`); roll next when the current item ends; Stop stops the session; exhausted playlist is Idle / Stopped, not Error. Operator form factor is one Docker compose on `http://127.0.0.1:8788`.
