@@ -18,6 +18,8 @@ True **LIVE** only. Not clip-post. Not VOD. Not file upload. Never Posted / Clip
 
 Bind and proxy **127.0.0.1 only**. Never `0.0.0.0`, LAN, or hotspot.
 
+**Operator URL:** `http://127.0.0.1:8788` **only** (same origin serves UI + `/api`). Vite `5173` is not the operator path (dev proxy may still exist for Frontend work; operators open 8788).
+
 Sign-in is **not** X OAuth. Sign-in is a one-time Media Studio RTMP save.
 
 ## Chrome
@@ -174,7 +176,7 @@ After Start, `GET /api/live/status` drives the pill (`starting` → Starting, th
 
 ## Live API (Frontend contract)
 
-Localhost only. Vite proxies `/api` → `http://127.0.0.1:8788`. Never `0.0.0.0`. No `/api/clip` route. No clip UI.
+Localhost only. Vite may still proxy `/api` → `http://127.0.0.1:8788` for Frontend work; operators open 8788. Never `0.0.0.0`. No `/api/clip` route. No clip UI.
 
 | Method | Path | Body / response |
 | --- | --- | --- |
