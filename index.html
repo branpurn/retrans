@@ -13,26 +13,25 @@
       </header>
 
       <main class="body">
-        <section id="beat-1" class="beat" data-beat="1" aria-labelledby="signin-title">
-          <h2 id="signin-title" class="title">
-            <span>Sign in</span>
+        <section id="beat-1" class="beat" data-beat="1" aria-labelledby="keys-title">
+          <h2 id="keys-title" class="title">
+            <span>Keys / Configuration</span>
             <button
               type="button"
-              id="signin-help-btn"
+              id="keys-help-btn"
               class="help-q"
               aria-expanded="false"
-              aria-controls="signin-help"
-              aria-label="Sign in help"
+              aria-controls="keys-help"
+              aria-label="Keys help"
             >
               ?
             </button>
           </h2>
-          <p id="signin-helper" class="helper">Save Media Studio RTMP once. Not X OAuth.</p>
-          <div id="signin-help" class="help-panel hidden">
+          <p id="keys-helper" class="helper">Save a named Media Studio stream key.</p>
+          <div id="keys-help" class="help-panel hidden">
             <ol class="help-steps">
-              <li>Open studio.x.com (Creator / Media Studio Producer)</li>
-              <li>Sources → Create Source (RTMP)</li>
-              <li>Copy the stream key into the Sign in field (not a two-field URL + key form)</li>
+              <li>Media Studio Sources → Create Source (RTMP)</li>
+              <li>Copy the stream key into the key field (not a two-field URL + key form)</li>
             </ol>
             <p class="helper">
               Broadcasts → Create Broadcast + Go Live still happen on X after Retrans starts.
@@ -55,7 +54,7 @@
             autocomplete="off"
           />
           <details id="advanced-rtmp">
-            <summary>Advanced</summary>
+            <summary>Advanced override</summary>
             <label class="field-label" for="rtmp_url">RTMP URL</label>
             <input
               id="rtmp_url"
@@ -105,7 +104,7 @@
           </label>
           <button id="continue-btn" class="btn-primary" type="button" disabled>Continue</button>
           <a id="change-dest" class="change-dest" href="#">Change destination</a>
-          <a id="add-key-link" class="change-dest" href="#">Add key</a>
+          <a id="add-key-link" class="change-dest" href="#">Keys</a>
         </section>
 
         <section id="beat-3" class="beat hidden" data-beat="3" aria-label="Retrans">

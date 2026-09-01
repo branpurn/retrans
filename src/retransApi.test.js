@@ -24,6 +24,8 @@ describe("retransApi lock", () => {
     assert.match(src, /key_id/);
     assert.match(src, /method:\s*["']PUT["']/);
     assert.match(src, /method:\s*["']DELETE["']/);
+    assert.match(src, /if \(id\) payload\.id = id/);
+    assert.match(src, /const payload = \{ name, rtmp_key \}/);
     assert.doesNotMatch(src, /\/api\/clip/);
     assert.doesNotMatch(src, /\/api\/live\/credentials/);
   });
@@ -48,10 +50,10 @@ describe("retransApi lock", () => {
     assert.doesNotMatch(html, /http:\/\/127\.0\.0\.1:8788\/api/);
     assert.match(vite, /base:\s*["']\.\/["']/);
     assert.match(vite, /const BACKEND = "http:\/\/127\.0\.0\.1:8788"/);
-    assert.match(readme, /\*\*Operator URL:\*\* `http:\/\/127\.0\.0\.1:8788` \*\*only\*\*/);
-    assert.match(readme, /Vite `5173` is not the operator path/);
+    assert.match(readme, /\*\*Keys \/ Configuration\*\*/);
+    assert.doesNotMatch(readme, /\*\*Sign in\*\*/);
     assert.match(readme, /Open http:\/\/127\.0\.0\.1:8788/);
-    assert.match(readme, /proxies \/api → http:\/\/127\.0\.0\.1:8788/);
+    assert.match(readme, /-p 127\.0\.0\.1:8788:8788/);
     assert.doesNotMatch(readme, /Open http:\/\/127\.0\.0\.1:5173/);
     assert.doesNotMatch(readme, /open the Vite URL/);
   });

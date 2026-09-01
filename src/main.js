@@ -15,12 +15,14 @@ import { retransApi } from "./retransApi.js";
 import { YOUTUBE_FIRST_HELPER, isPreviewProbeFail, previewPaint } from "./previewChrome.js";
 import { readField, writeField, writeSourceIfNeeded } from "./fields.js";
 import {
-  SIGNIN_HELPER,
+  KEYS_HELPER,
   aggregateSessions,
   applyDeleteKey,
   applyKeysBoot,
   applyKeysPoll,
   applySaveSuccess,
+  applySelectKey,
+  applyStartEdit,
   clearStuck,
   putKeyBody,
   sessionIsError,
@@ -44,9 +46,9 @@ const els = {
   addKeyBtn: document.getElementById("add-key-btn"),
   addKeyLink: document.getElementById("add-key-link"),
   saveBtn: document.getElementById("save-btn"),
-  signInHelper: document.getElementById("signin-helper"),
-  signInHelp: document.getElementById("signin-help"),
-  signInHelpBtn: document.getElementById("signin-help-btn"),
+  keysHelper: document.getElementById("keys-helper"),
+  keysHelp: document.getElementById("keys-help"),
+  keysHelpBtn: document.getElementById("keys-help-btn"),
   keyPicker: document.getElementById("key_id"),
   ack: document.getElementById("ack"),
   continueBtn: document.getElementById("continue-btn"),
@@ -68,10 +70,11 @@ const state = {
   keys: [],
   justSaved: false,
   adding: false,
+  editingId: "",
   selectedKeyId: "",
   sessions: [],
   stuckErrors: {},
-  signInError: "",
+  keysError: "",
 };
 
 let pollTimer = null;
@@ -107,6 +110,8 @@ function applyChrome(next) {
   state.keys = next.keys;
   state.justSaved = Boolean(next.justSaved);
   state.adding = Boolean(next.adding);
+  if ("editingId" in next) state.editingId = next.editingId || "";
+  if ("selectedKeyId" in next) state.selectedKeyId = next.selectedKeyId || "";
   showBeat(next.beat);
 }
 
@@ -171,14 +176,28 @@ function renderKeyList() {
   els.keyList.replaceChildren();
   for (const key of state.keys) {
     const li = document.createElement("li");
-    const name = document.createElement("span");
+    if (key.id === state.selectedKeyId) li.className = "is-selected";
+    const name = document.createElement("button");
+    name.type = "button";
     name.className = "key-name";
     name.textContent = key.name;
+    name.addEventListener("click", () => onEditKey(key.id));
+    const actions = document.createElement("div");
+    actions.className = "key-actions";
+    const select = document.createElement("button");
+    select.type = "button";
+    select.textContent = "Select";
+    select.addEventListener("click", () => onSelectKey(key.id));
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.textContent = "Open/Edit";
+    edit.addEventListener("click", () => onEditKey(key.id));
     const del = document.createElement("button");
     del.type = "button";
     del.textContent = "Delete";
     del.addEventListener("click", () => onDeleteKey(key.id));
-    li.append(name, del);
+    actions.append(select, edit, del);
+    li.append(name, actions);
     els.keyList.append(li);
   }
 }
@@ -240,7 +259,7 @@ function render() {
   els.pill.dataset.status = status;
   els.pill.textContent = pillLabel(status);
 
-  els.signInHelper.textContent = state.signInError || SIGNIN_HELPER;
+  els.keysHelper.textContent = state.keysError || KEYS_HELPER;
   els.saveBtn.disabled = !readField(els.rtmpKey);
   els.previewBtn.disabled = parseSourceUrl(readField(els.source)).reason === "youtube-first";
   els.continueBtn.disabled = !canContinue(gate());
@@ -367,11 +386,32 @@ function stopPolling() {
   pollTimer = null;
 }
 
-function goAddKey() {
+function goKeysPanel({ add = false } = {}) {
   clearDestFields();
-  state.signInError = "";
-  state.adding = state.keys.length > 0;
+  state.keysError = "";
+  state.editingId = "";
+  state.adding = Boolean(add && state.keys.length > 0);
   showBeat(1);
+  render();
+}
+
+function goAddKey() {
+  goKeysPanel({ add: true });
+}
+
+function onSelectKey(id) {
+  applyChrome(applySelectKey(state, id));
+  render();
+}
+
+function onEditKey(id) {
+  const key = state.keys.find((row) => row.id === id);
+  if (!key) return;
+  applyChrome(applyStartEdit(state, id));
+  writeField(els.keyName, key.name);
+  writeField(els.rtmpKey, "");
+  writeField(els.rtmpUrl, "");
+  if (els.advanced) els.advanced.open = false;
   render();
 }
 
@@ -425,9 +465,9 @@ els.rtmpKey.addEventListener("blur", () => {
   els.rtmpKey.type = "password";
 });
 
-els.signInHelpBtn.addEventListener("click", () => {
-  const open = els.signInHelp.classList.toggle("hidden");
-  els.signInHelpBtn.setAttribute("aria-expanded", open ? "false" : "true");
+els.keysHelpBtn.addEventListener("click", () => {
+  const open = els.keysHelp.classList.toggle("hidden");
+  els.keysHelpBtn.setAttribute("aria-expanded", open ? "false" : "true");
 });
 
 els.addKeyBtn.addEventListener("click", goAddKey);
@@ -439,8 +479,10 @@ els.addKeyLink.addEventListener("click", (event) => {
 els.saveBtn.addEventListener("click", async () => {
   const rtmp_key = readField(els.rtmpKey);
   if (!rtmp_key) return;
-  const adding = state.adding || state.keys.length > 0;
+  const editing = Boolean(state.editingId);
+  const adding = !editing && (state.adding || state.keys.length > 0);
   const body = putKeyBody({
+    id: state.editingId || undefined,
     name: readField(els.keyName),
     rtmp_key,
     rtmp_url: els.advanced?.open ? readField(els.rtmpUrl).trim() : "",
@@ -450,14 +492,16 @@ els.saveBtn.addEventListener("click", async () => {
   try {
     const result = await retransApi.saveKey(body);
     if (result.ok && result.id) {
-      state.signInError = "";
-      applyChrome(applySaveSuccess(state, { id: result.id, name: result.name }, { adding }));
+      state.keysError = "";
+      applyChrome(
+        applySaveSuccess(state, { id: result.id, name: result.name }, { adding, editing }),
+      );
       clearDestFields();
     } else {
-      state.signInError = result.error || "save failed";
+      state.keysError = result.error || "save failed";
     }
   } catch {
-    state.signInError = "save failed";
+    state.keysError = "save failed";
   } finally {
     render();
   }
@@ -471,7 +515,7 @@ els.continueBtn.addEventListener("click", () => {
 
 els.changeDest.addEventListener("click", (event) => {
   event.preventDefault();
-  goAddKey();
+  goKeysPanel({ add: false });
 });
 
 els.dropAnother.addEventListener("click", (event) => {
@@ -535,13 +579,14 @@ async function boot() {
   } catch {
     /* boot status failure: stay Idle; keep idle transport helper */
   }
-  if (state.keys.length === 0 && !state.justSaved) {
-    showBeat(1);
-  } else if (state.backend === "starting" || state.backend === "live" || state.sessions.some((sess) => sess.state === "starting" || sess.state === "live" || sess.state === "error")) {
+  const liveish = state.sessions.some(
+    (sess) => sess.state === "starting" || sess.state === "live" || sess.state === "error",
+  );
+  if (state.backend === "starting" || state.backend === "live" || liveish) {
     if (state.previewOk) els.ack.checked = true;
     showBeat(3);
-  } else if (state.beat === 1 && (state.keys.length > 0 || state.justSaved) && !state.adding) {
-    showBeat(2);
+  } else {
+    showBeat(state.beat);
   }
   render();
 }

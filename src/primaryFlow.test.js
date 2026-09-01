@@ -29,14 +29,14 @@ describe("primary-flow chrome lock", () => {
     assert.doesNotMatch(css, /\.body\s*\{[^}]*overflow:\s*hidden/s);
   });
 
-  it("locks Beat 1 keys-only Sign in, hidden URL, ?, named list", () => {
-    assert.match(html, />Sign in</);
-    assert.match(html, /Save Media Studio RTMP once\. Not X OAuth\./);
-    assert.match(html, /id="signin-help-btn"/);
+  it("locks Beat 1 Keys / Configuration, hidden URL, ?, Open/Edit Select Delete", () => {
+    assert.match(html, />Keys \/ Configuration</);
+    assert.doesNotMatch(html, /Sign in/);
+    assert.match(html, /Save a named Media Studio stream key\./);
+    assert.match(html, /id="keys-help-btn"/);
     assert.match(html, />\s*\?\s*</);
-    assert.match(html, /Open studio\.x\.com \(Creator \/ Media Studio Producer\)/);
-    assert.match(html, /Sources → Create Source \(RTMP\)/);
-    assert.match(html, /Copy the stream key into the Sign in field/);
+    assert.match(html, /Media Studio Sources → Create Source \(RTMP\)/);
+    assert.match(html, /Copy the stream key into the key field/);
     assert.match(html, /Broadcasts → Create Broadcast \+ Go Live still happen on X after Retrans starts\./);
     assert.match(html, /id="key_name"[^>]*type="text"/s);
     assert.match(html, /id="rtmp_key"[^>]*type="password"/s);
@@ -71,7 +71,7 @@ describe("primary-flow chrome lock", () => {
     assert.match(html, /I have permission or fair use to retransmit this live\./);
     assert.match(html, /id="continue-btn"[^>]*>Continue</s);
     assert.match(html, /id="change-dest"[^>]*>Change destination</s);
-    assert.match(html, /id="add-key-link"[^>]*>Add key</s);
+    assert.match(html, /id="add-key-link"[^>]*>Keys</s);
     assert.match(html, /YouTube first/);
     assert.match(main, /showBeat\(3\)/);
     assert.match(main, /canContinue/);
@@ -144,8 +144,8 @@ describe("primary-flow chrome lock", () => {
     assert.doesNotMatch(html, /:5173/);
     assert.match(design, /\*\*Operator URL:\*\* `http:\/\/127\.0\.0\.1:8788` \*\*only\*\*/);
     assert.match(design, /Vite `5173` is not the operator path/);
-    assert.match(readme, /\*\*Operator URL:\*\* `http:\/\/127\.0\.0\.1:8788` \*\*only\*\*/);
-    assert.match(readme, /Vite `5173` is not the operator path/);
+    assert.match(readme, /\*\*Keys \/ Configuration\*\*/);
+    assert.doesNotMatch(readme, /\*\*Sign in\*\*/);
     assert.match(readme, /Open http:\/\/127\.0\.0\.1:8788/);
     assert.doesNotMatch(readme, /Open http:\/\/127\.0\.0\.1:5173/);
   });

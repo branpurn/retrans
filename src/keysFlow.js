@@ -1,13 +1,16 @@
 /**
  * Named-key beat routing. First Save sticks on Beat 2.
  * Optimistic keys from PUT 200 {id,name}. Empty GET keys/status must not
- * snap back to Sign in after a successful Save.
+ * snap back to the Keys panel after a successful Save.
+ *
+ * Boot with saved keys stays on Beat 1 so the operator can select / edit.
+ * Select is UI-only (sets key_id for POST /api/live/start).
  */
 
 const BUSY = new Set(["starting", "live"]);
 
 export const DEFAULT_INGEST = "rtmps://va.pscp.tv:443/x";
-export const SIGNIN_HELPER = "Save Media Studio RTMP once. Not X OAuth.";
+export const KEYS_HELPER = "Save a named Media Studio stream key.";
 
 export function publicNamedKey(raw) {
   if (!raw || typeof raw !== "object") return null;
@@ -39,26 +42,38 @@ export function mergeOptimisticKey(keys, saved) {
 }
 
 /**
- * First Save (no keys yet, not Add) → Beat 2 + justSaved.
- * Add+Save (already had keys, or operator clicked Add with keys) → Beat 1.
+ * First Save (no keys yet, not Add/Edit) → Beat 2 + justSaved.
+ * Add+Save / Edit+Save stays on Beat 1 (list stays visible).
  */
-export function applySaveSuccess(chrome, saved, { adding = false } = {}) {
+export function applySaveSuccess(chrome, saved, { adding = false, editing = false } = {}) {
   const prior = Array.isArray(chrome.keys) ? chrome.keys : [];
   const first = prior.length === 0;
   const keys = mergeOptimisticKey(prior, saved);
-  if (adding && !first) {
-    return { ...chrome, keys, justSaved: false, adding: true, beat: 1 };
+  if (editing || (adding && !first)) {
+    return {
+      ...chrome,
+      keys,
+      justSaved: false,
+      adding: Boolean(adding && !first),
+      editingId: "",
+      beat: 1,
+    };
   }
-  return { ...chrome, keys, justSaved: true, adding: false, beat: 2 };
+  return {
+    ...chrome,
+    keys,
+    justSaved: true,
+    adding: false,
+    editingId: "",
+    selectedKeyId: saved?.id || chrome.selectedKeyId || "",
+    beat: 2,
+  };
 }
 
-/** Boot: empty / GET fail → Beat 1. Any named key → Beat 2. */
+/** Boot: empty / GET fail / any named key → Beat 1 (list visible when keys exist). */
 export function applyKeysBoot(result) {
   const keys = keysFromResult(result);
-  if (keys.length === 0) {
-    return { keys: [], justSaved: false, adding: false, beat: 1 };
-  }
-  return { keys, justSaved: false, adding: false, beat: 2 };
+  return { keys, justSaved: false, adding: false, editingId: "", beat: 1 };
 }
 
 /**
@@ -82,22 +97,46 @@ export function applyKeysPoll(chrome, result) {
       const beat = chrome.adding ? 1 : chrome.beat === 1 ? 2 : chrome.beat || 2;
       return { ...chrome, keys: optimistic, justSaved: true, beat };
     }
-    return { ...chrome, keys: [], justSaved: false, beat: 1, adding: false };
+    return { ...chrome, keys: [], justSaved: false, beat: 1, adding: false, editingId: "" };
   }
   return {
     ...chrome,
     keys: incoming,
     justSaved: false,
-    beat: chrome.adding ? 1 : chrome.beat || 2,
+    beat: chrome.adding || chrome.editingId || chrome.beat === 1 ? 1 : chrome.beat || 2,
   };
 }
 
 export function applyDeleteKey(chrome, id) {
   const keys = (Array.isArray(chrome.keys) ? chrome.keys : []).filter((key) => key.id !== id);
+  const selectedKeyId = chrome.selectedKeyId === id ? "" : chrome.selectedKeyId;
+  const editingId = chrome.editingId === id ? "" : chrome.editingId;
   if (keys.length === 0) {
-    return { ...chrome, keys, justSaved: false, adding: false, beat: 1 };
+    return {
+      ...chrome,
+      keys,
+      selectedKeyId,
+      editingId,
+      justSaved: false,
+      adding: false,
+      beat: 1,
+    };
   }
-  return { ...chrome, keys };
+  return { ...chrome, keys, selectedKeyId, editingId };
+}
+
+/** Select is UI-only: sets key_id for Drop/Retrans start. */
+export function applySelectKey(chrome, id) {
+  const keys = Array.isArray(chrome.keys) ? chrome.keys : [];
+  if (!keys.some((key) => key.id === id)) return chrome;
+  return { ...chrome, selectedKeyId: id, editingId: "", adding: false, beat: 2 };
+}
+
+/** Reopen a named key for edit. Secret is never returned — field stays empty. */
+export function applyStartEdit(chrome, id) {
+  const keys = Array.isArray(chrome.keys) ? chrome.keys : [];
+  if (!keys.some((key) => key.id === id)) return chrome;
+  return { ...chrome, editingId: id, adding: false, beat: 1 };
 }
 
 export function unusedKeys(keys, sessions) {
@@ -170,8 +209,22 @@ export function clearStuck(stuckErrors, session) {
   return next;
 }
 
-export function putKeyBody({ name, rtmp_key, rtmp_url, keys }) {
-  const body = { rtmp_key, name: name && name.trim() ? name.trim() : defaultKeyName(keys) };
+/**
+ * PUT /api/live/keys body. Backend requires name + rtmp_key every time.
+ * id present = edit. Omit rtmp_url unless Advanced override is on.
+ * Never send a blank key (caller must require a typed value).
+ */
+export function putKeyBody({ name, rtmp_key, rtmp_url, keys, id }) {
+  const trimmed = typeof name === "string" ? name.trim() : "";
+  let resolved = trimmed;
+  if (!resolved && id) {
+    const existing = (Array.isArray(keys) ? keys : []).find((key) => key.id === id);
+    resolved = existing?.name || defaultKeyName(keys);
+  } else if (!resolved) {
+    resolved = defaultKeyName(keys);
+  }
+  const body = { rtmp_key, name: resolved };
+  if (id) body.id = id;
   if (rtmp_url && rtmp_url.trim()) body.rtmp_url = rtmp_url.trim();
   return body;
 }
