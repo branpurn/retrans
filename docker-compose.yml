@@ -4,10 +4,16 @@
 # Image: ghcr.io/branpurn/retrans (GitHub Release tag or latest).
 #
 # Operator (pull + one compose): `RETRANS_IMAGE_TAG=<tag> docker compose --profile loopback up`
-#   ONE service: retrans serve on 127.0.0.1:8788 hosts dist/ + /api (same-origin).
+#   ONE service: retrans serve, published 127.0.0.1:8788:8788 (dist/ + /api, same-origin).
 #   Does not start the live ffmpeg worker. Does not start Vite.
-#   Host network is required: publishing 8788:8788 would need the process to
-#   listen on 0.0.0.0 inside the container, which retrans serve refuses.
+#   Host bind is 127.0.0.1 only — never 0.0.0.0 / LAN / hotspot. Not host network
+#   (rootless Docker does not put host-net 8788 on the real host 127.0.0.1).
+#   HOST=0.0.0.0 is inside the container only so the published mapping works.
+#   Backend must accept HOST=0.0.0.0 in-container; host never binds 0.0.0.0:8788.
+# Operator docker run (same publish mapping, not --network host):
+#   docker rm -f retrans
+#   docker pull ghcr.io/branpurn/retrans:latest
+#   docker run --rm --init -p 127.0.0.1:8788:8788 IMAGE retrans serve
 # Live worker (keyed): `docker compose --profile live up` (no host bind).
 #   No keys → entrypoint idles (does not start ffmpeg). No container_name so
 #   more than one keyed worker can run.
@@ -28,9 +34,10 @@ services:
     image: ghcr.io/branpurn/retrans:${RETRANS_IMAGE_TAG:-latest}
     build: .
     command: retrans serve
-    network_mode: host
+    ports:
+      - "127.0.0.1:8788:8788"
     environment:
-      HOST: "127.0.0.1"
+      HOST: "0.0.0.0"
       PORT: "8788"
     env_file:
       - path: .env
