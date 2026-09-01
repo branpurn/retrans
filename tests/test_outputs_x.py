@@ -95,7 +95,8 @@ def test_restream_start_spawns_ffmpeg_after_resolve():
 
     def popen(cmd, **_kwargs):
         spawned["cmd"] = cmd
-        return _FakeProc(code=None)
+        spawned["proc"] = _FakeProc(code=None)
+        return spawned["proc"]
 
     job = XLiveRestream(resolver=Resolver(), popen=popen)
     job.start(
@@ -106,6 +107,20 @@ def test_restream_start_spawns_ffmpeg_after_resolve():
     assert job.running()
     assert spawned["cmd"][0] == "ffmpeg"
     assert spawned["cmd"][-1].endswith("/secret-key")
+    with pytest.raises(RestreamError, match="cannot be reused"):
+        job.start(
+            "https://www.youtube.com/watch?v=abc",
+            "rtmps://va.pscp.tv:443/x",
+            "secret-key",
+        )
+    spawned["proc"]._code = 1
+    assert job.running() is False
+    with pytest.raises(RestreamError, match="cannot be reused"):
+        job.start(
+            "https://www.youtube.com/watch?v=abc",
+            "rtmps://va.pscp.tv:443/x",
+            "secret-key",
+        )
 
 
 def test_restream_start_redacts_key_on_immediate_exit():

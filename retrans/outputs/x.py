@@ -107,7 +107,15 @@ class XLiveRestream:
         self._stderr_thread: threading.Thread | None = None
 
     def start(self, source_url: str, rtmp_url: str, rtmp_key: str) -> None:
-        """Resolve + spawn ffmpeg. Returns once the process is running."""
+        """Resolve + spawn ffmpeg. Returns once the process is running.
+
+        One instance, one spawn. A dead or running proc cannot be started
+        again — LiveController must construct a new XLiveRestream.
+        """
+        if self._proc is not None:
+            raise RestreamError(
+                "XLiveRestream.start cannot be reused; create a new instance"
+            )
         dest = join_rtmp_destination(rtmp_url, rtmp_key)
         self._rtmp_url = rtmp_url
         self._rtmp_key = rtmp_key

@@ -92,7 +92,7 @@ retrans serve
 | `POST` | `/api/live/stop` | `200 {"ok":true,"state":"stopped"}` (also `200`/`ok` if already idle) |
 | `GET` | `/api/live/status` | `200 {"ok":true,"state":"idle"\|"starting"\|"live"\|"error"\|"stopped","source_url":"…" or null,"error":null or string}` |
 
-Responses **never** echo `rtmp_key` or `rtmp_url`. If ffmpeg exits unexpectedly (non-zero **or** zero without an operator stop), `GET /api/live/status` becomes `state=error` with a redacted reason — not a stuck `live` or a clean `stopped`. Operator `POST /api/live/stop` is still `stopped`.
+Responses **never** echo `rtmp_key` or `rtmp_url`. If ffmpeg exits unexpectedly (non-zero **or** zero without an operator stop), `GET /api/live/status` becomes `state=error` with a redacted reason — not a stuck `live` or a clean `stopped`. Operator `POST /api/live/stop` is still `stopped`. After `error`, `stopped`, or `idle`, `POST /api/live/start` starts a new session on the same serve process (no restart required) and clears the previous error. `409` already-running is only when a session is actually `starting` or `live`.
 
 ## Operator UI (this PR)
 
