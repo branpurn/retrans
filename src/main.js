@@ -6,6 +6,7 @@ import {
   canStart,
   canStop,
   isUsableStatus,
+  nextChrome,
   pillFor,
   pillLabel,
   transportHelper,
@@ -47,8 +48,21 @@ const state = {
 
 let pollTimer = null;
 
+function readField(el) {
+  return el.value;
+}
+
+function writeField(el, next) {
+  const placeholder = el.getAttribute("placeholder") ?? "";
+  const value = next == null ? "" : String(next);
+  if (placeholder && value === placeholder && el.value && el.value !== placeholder) {
+    return;
+  }
+  el.value = value;
+}
+
 function secrets() {
-  return [els.rtmpUrl.value, els.rtmpKey.value];
+  return [readField(els.rtmpUrl), readField(els.rtmpKey)];
 }
 
 function redact(text) {
@@ -60,8 +74,8 @@ function redact(text) {
 }
 
 function clearDestFields() {
-  els.rtmpUrl.value = "";
-  els.rtmpKey.value = "";
+  writeField(els.rtmpUrl, "");
+  writeField(els.rtmpKey, "");
   els.rtmpKey.type = "password";
 }
 
@@ -122,8 +136,8 @@ function render() {
   els.pill.textContent = pillLabel(status);
 
   els.signInHelper.textContent = state.signInError || SIGNIN_HELPER;
-  els.saveBtn.disabled = !(els.rtmpUrl.value.trim() && els.rtmpKey.value);
-  els.previewBtn.disabled = parseSourceUrl(els.source.value).reason === "youtube-first";
+  els.saveBtn.disabled = !(readField(els.rtmpUrl).trim() && readField(els.rtmpKey));
+  els.previewBtn.disabled = parseSourceUrl(readField(els.source)).reason === "youtube-first";
   els.continueBtn.disabled = !canContinue(gate());
   els.startBtn.disabled = !canStart(gate());
   els.stopBtn.disabled = !canStop({ state: state.backend });
@@ -135,7 +149,7 @@ function render() {
 }
 
 async function runPreview() {
-  const parsed = parseSourceUrl(els.source.value);
+  const parsed = parseSourceUrl(readField(els.source));
   if (!parsed.ok) {
     applyPreview(parsed);
     render();
@@ -160,39 +174,56 @@ async function runPreview() {
 
 function invalidatePreviewIfSourceChanged() {
   if (!state.parsed?.ok) {
-    const parsed = parseSourceUrl(els.source.value);
+    const parsed = parseSourceUrl(readField(els.source));
     els.pasteHelper.classList.toggle("hidden", parsed.reason !== "youtube-first");
     render();
     return;
   }
-  const next = parseSourceUrl(els.source.value);
+  const next = parseSourceUrl(readField(els.source));
   if (!next.ok || next.href !== state.parsed.href) {
     state.previewOk = false;
     state.parsed = null;
     clearPreview();
   }
-  const parsed = parseSourceUrl(els.source.value);
+  const parsed = parseSourceUrl(readField(els.source));
   els.pasteHelper.classList.toggle("hidden", parsed.reason !== "youtube-first");
   render();
 }
 
 function applyBackend(result) {
   if (!result) return;
-  state.backend = backendFromResult(result);
-  state.error = typeof result.error === "string" ? result.error : "";
-  if (result.source_url && !state.previewOk) {
-    els.source.value = result.source_url;
-    runPreview();
-  }
-  if (state.backend === "starting" || state.backend === "live") startPolling();
-  else stopPolling();
-  render();
+  applyOperator(result, "command");
 }
 
 /** Apply GET /api/live/status only when it is a real session payload. */
 function applyStatus(result) {
   if (!isUsableStatus(result)) return;
-  applyBackend(result);
+  applyOperator(result, "status");
+}
+
+function applyOperator(result, source) {
+  const next = nextChrome(
+    { backend: state.backend, error: state.error },
+    result,
+    source,
+  );
+  const stuckError =
+    source === "status" &&
+    state.backend === "error" &&
+    backendFromResult(result) !== "error";
+  state.backend = next.backend;
+  state.error = next.error;
+  if (stuckError) {
+    render();
+    return;
+  }
+  if (result.source_url && !state.previewOk) {
+    writeField(els.source, result.source_url);
+    runPreview();
+  }
+  if (state.backend === "starting" || state.backend === "live") startPolling();
+  else stopPolling();
+  render();
 }
 
 function startPolling() {
@@ -231,8 +262,8 @@ els.rtmpKey.addEventListener("blur", () => {
 });
 
 els.saveBtn.addEventListener("click", async () => {
-  const rtmp_url = els.rtmpUrl.value.trim();
-  const rtmp_key = els.rtmpKey.value;
+  const rtmp_url = readField(els.rtmpUrl).trim();
+  const rtmp_key = readField(els.rtmpKey);
   if (!rtmp_url || !rtmp_key) return;
   els.saveBtn.disabled = true;
   try {
@@ -271,7 +302,7 @@ els.startBtn.addEventListener("click", async () => {
   els.startBtn.disabled = true;
   try {
     const result = await retransApi.start({
-      source_url: els.source.value.trim(),
+      source_url: readField(els.source).trim(),
     });
     applyBackend(result);
   } catch {

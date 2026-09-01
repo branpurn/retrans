@@ -33,6 +33,10 @@ describe("primary-flow chrome lock", () => {
     assert.match(html, /Save Media Studio RTMP once\. Not X OAuth\./);
     assert.match(html, /id="rtmp_url"[^>]*type="text"/s);
     assert.match(html, /id="rtmp_key"[^>]*type="password"/s);
+    assert.match(html, /id="rtmp_url"[^>]*autocomplete="off"/s);
+    assert.match(html, /id="rtmp_key"[^>]*autocomplete="off"/s);
+    assert.doesNotMatch(html, /id="rtmp_url"[^>]*placeholder=/s);
+    assert.doesNotMatch(html, /id="rtmp_key"[^>]*placeholder=/s);
     assert.match(html, /id="save-btn"[^>]*>Save</s);
     assert.match(main, /saveCredentials\(\{\s*rtmp_url,\s*rtmp_key\s*\}\)/);
     assert.match(main, /clearDestFields/);
@@ -42,7 +46,10 @@ describe("primary-flow chrome lock", () => {
 
   it("locks Beat 2 Drop link, preview, ack, Continue, Change destination", () => {
     assert.match(html, />Drop link</);
+    assert.match(html, /id="source_url"[^>]*type="text"/s);
     assert.match(html, /placeholder="Paste YouTube live URL"/);
+    assert.match(html, /id="source_url"[^>]*autocomplete="off"/s);
+    assert.doesNotMatch(html, /id="source_url"[^>]*type="url"/s);
     assert.match(html, /I have permission or fair use to retransmit this live\./);
     assert.match(html, /id="continue-btn"[^>]*>Continue</s);
     assert.match(html, /id="change-dest"[^>]*>Change destination</s);
@@ -68,7 +75,7 @@ describe("primary-flow chrome lock", () => {
 
   it("does not paint parseSourceUrl as display before preview API", () => {
     assert.doesNotMatch(main, /applyPreview\(\s*parseSourceUrl/);
-    assert.match(main, /els\.source\.value = result\.source_url/);
+    assert.match(main, /writeField\(els\.source, result\.source_url\)/);
     assert.match(main, /runPreview\(\)/);
     assert.match(main, /retransApi\.preview\(/);
     assert.match(main, /result\.is_live === true/);
@@ -77,7 +84,7 @@ describe("primary-flow chrome lock", () => {
   });
 
   it("Start sends source_url only; no clip UI; Vite loopback 8788", () => {
-    assert.match(main, /retransApi\.start\(\s*\{\s*source_url:\s*els\.source\.value\.trim\(\)\s*,?\s*\}\s*\)/);
+    assert.match(main, /retransApi\.start\(\s*\{\s*source_url:\s*readField\(els\.source\)\.trim\(\)\s*,?\s*\}\s*\)/);
     assert.doesNotMatch(main, /\/api\/clip/);
     assert.doesNotMatch(html, /\/api\/clip/);
     assert.doesNotMatch(html, /\b[Cc]lip\b/);
@@ -91,5 +98,19 @@ describe("primary-flow chrome lock", () => {
     assert.match(main, /showBeat\(2\)/);
     assert.match(main, /isUsableStatus/);
     assert.doesNotMatch(main, /error\s*=\s*["']status failed["']/);
+  });
+
+  it("Error sticks until Stop; idle status poll does not wipe", () => {
+    assert.match(enablement, /export function nextChrome/);
+    assert.match(main, /nextChrome/);
+    assert.match(main, /applyStatus/);
+    assert.match(enablement, /state === "live" \|\| state === "error"/);
+    assert.match(css, /::placeholder/);
+    assert.match(css, /:not\(:placeholder-shown\)/);
+    assert.match(main, /function readField/);
+    assert.match(main, /function writeField/);
+    assert.doesNotMatch(main, /els\.source\.value\s*=\s*["']Paste YouTube live URL["']/);
+    assert.doesNotMatch(main, /\.placeholder\s*=/);
+    assert.doesNotMatch(css, /input\[type="url"\]/);
   });
 });

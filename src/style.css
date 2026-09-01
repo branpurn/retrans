@@ -124,7 +124,6 @@ body {
   align-items: center;
 }
 
-input[type="url"],
 input[type="text"],
 input[type="password"] {
   height: 32px;
@@ -135,6 +134,16 @@ input[type="password"] {
   color: var(--ink);
   font: inherit;
   width: 100%;
+}
+
+input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+/* :placeholder-shown only when value is empty — never cover a typed value */
+input:not(:placeholder-shown) {
+  color: var(--ink);
 }
 
 input:focus {
