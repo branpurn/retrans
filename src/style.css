@@ -146,6 +146,25 @@ input:not(:placeholder-shown) {
   color: var(--ink);
 }
 
+/* Placeholder must not paint on top of input.value (URL+placeholder concat). */
+input:not(:placeholder-shown)::placeholder {
+  color: transparent;
+  opacity: 0;
+}
+
+/* Drop-link URL field: displayed text is el.value only. Preview chrome stays below. */
+#source_url {
+  position: relative;
+  z-index: 1;
+}
+
+#beat-2 .preview-card,
+#beat-2 .preview-title,
+#beat-2 .preview-host {
+  position: relative;
+  inset: auto;
+}
+
 input:focus {
   outline: 1px solid var(--accent);
 }

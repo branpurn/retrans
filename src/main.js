@@ -13,6 +13,7 @@ import {
 } from "./enablement.js";
 import { retransApi } from "./retransApi.js";
 import { YOUTUBE_FIRST_HELPER, isPreviewProbeFail, previewPaint } from "./previewChrome.js";
+import { readField, writeField, writeSourceIfNeeded } from "./fields.js";
 
 const SIGNIN_HELPER = "Save Media Studio RTMP once. Not X OAuth.";
 
@@ -49,19 +50,6 @@ const state = {
 
 let pollTimer = null;
 
-function readField(el) {
-  return el.value;
-}
-
-function writeField(el, next) {
-  const placeholder = el.getAttribute("placeholder") ?? "";
-  const value = next == null ? "" : String(next);
-  if (placeholder && value === placeholder && el.value && el.value !== placeholder) {
-    return;
-  }
-  el.value = value;
-}
-
 function secrets() {
   return [readField(els.rtmpUrl), readField(els.rtmpKey)];
 }
@@ -94,6 +82,7 @@ function applyPaint(model, parsed) {
   els.pasteHelper.textContent = helper || YOUTUBE_FIRST_HELPER;
   els.pasteHelper.classList.toggle("hidden", !helper);
 
+  // Title/host stay on the preview card — never paint them onto #source_url.
   for (const card of els.previewCards) {
     card.classList.toggle("hidden", !model.showCard);
     const title = card.querySelector(".preview-title");
@@ -157,6 +146,7 @@ async function runPreview() {
     render();
     return;
   }
+  // Field stays el.value (one URL). Do not write result.source_url / parsed.href.
   try {
     const result = await retransApi.preview(parsed.href);
     if (result.error) result.error = redact(result.error);
@@ -215,7 +205,8 @@ function applyOperator(result, source) {
     return;
   }
   if (result.source_url && !state.previewOk) {
-    writeField(els.source, result.source_url);
+    // Restore only when the typed value is empty/wrong — never append, never rewrite the same URL.
+    writeSourceIfNeeded(els.source, result.source_url);
     runPreview();
   }
   if (state.backend === "starting" || state.backend === "live") startPolling();
