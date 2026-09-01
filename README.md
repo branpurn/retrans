@@ -21,7 +21,7 @@ Wave 1 path: **live source URL → continuous live restream** to the operator’
 
 There is **no public X API** to create a live broadcast or mint an RTMP key. Sending RTMP alone is **not** enough — the operator must create a source, create a broadcast, and click **Go Live** in Media Studio ([Restream](https://restream.io/learn/platforms/how-to-find-x-stream-key/), [Castr](https://docs.castr.com/en/articles/5119218-how-to-stream-live-video-to-x-formerly-twitter-using-castr), [vMix](https://www.vmix.com/knowledgebase/article.aspx/373/stream-to-x-using-custom-rtmp)).
 
-Operator dependencies: **ffmpeg** and **yt-dlp** (streamlink optional fallback). Operator-run image: `docker compose up --build` (ffmpeg + yt-dlp + streamlink). Secrets via `.env` / env vars only (copy `.env.example`; never commit `.env`).
+Operator dependencies: **ffmpeg** and **yt-dlp** (streamlink optional fallback). Operator-run live worker: `docker compose --profile live up --build` (ffmpeg + yt-dlp + streamlink; needs `.env`). Secrets via `.env` / env vars only (copy `.env.example`; never commit `.env`).
 
 ## Operator loopback (one command)
 
@@ -41,7 +41,7 @@ Without Docker (`pip install -e .` and `npm install` first):
 
 CI checks that `HOST=0.0.0.0 ./scripts/loopback.sh` is refused (non-zero; no bind). Both paths fail-hard if `retrans serve` is not listening on `127.0.0.1:8788`; the UI is not started until that loopback probe succeeds.
 
-Then open the Vite URL (typically `http://127.0.0.1:5173`). Control API: `http://127.0.0.1:8788`. Default `docker compose up` remains the live ffmpeg worker (no host port).
+Then open the Vite URL (typically `http://127.0.0.1:5173`). Control API: `http://127.0.0.1:8788`. The loopback profile does not start the live ffmpeg worker. Live worker is `docker compose --profile live up --build` and needs `.env` (no host port).
 
 ## Sign in → Drop link → Retrans (loopback, 127.0.0.1 only)
 

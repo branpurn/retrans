@@ -2,13 +2,15 @@
 # Wave 1 is a long-running live pipeline, not a clip-only batch job.
 # X credentials stay in .env (gitignored). Copy .env.example → .env.
 #
-# Default: `docker compose up --build` → live ffmpeg worker only (no host bind).
+# Live worker: `docker compose --profile live up --build` (no host bind).
 # Loopback (Linux host network): `docker compose --profile loopback up --build`
+#   serve + ui only — does not start the live ffmpeg worker.
 #   serve + ui bind 127.0.0.1 on the host. Never 0.0.0.0 / LAN / hotspot.
 #   Host network is required: publishing 8788:8788 would need the process to
 #   listen on 0.0.0.0 inside the container, which retrans serve refuses.
 services:
   retrans:
+    profiles: ["live"]
     build: .
     env_file:
       - path: .env
