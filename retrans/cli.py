@@ -1,7 +1,9 @@
 """RETRANS operator CLI.
 
-Product command: `retrans live` (page URL → ffmpeg RTMP to Media Studio).
-`retrans serve` exposes the loopback live control API for the operator UI.
+Product commands:
+  `retrans live`  — headless true-live ffmpeg worker (no HTTP UI).
+  `retrans serve` — loopback live control API for the operator UI (8788).
+
 `retrans clip` is a debug aid — not the product.
 """
 
@@ -11,8 +13,19 @@ import argparse
 import os
 import sys
 
-from retrans.config import RTMP_KEY_ENV, RTMP_URL_ENV, X_BEARER_ENV
-from retrans.outputs.x import XLiveRestream, debug_chunked_upload_and_post
+from retrans.config import (
+    DEFAULT_RTMP_URL,
+    RTMP_KEY_ENV,
+    RTMP_URL_ENV,
+    SOURCE_URL_ENV,
+    TITLE_ENV,
+    TITLE_ENV_ALIAS,
+    X_BEARER_ENV,
+    env_value,
+    load_env_file,
+    redact,
+)
+from retrans.outputs.x import RestreamError, XLiveRestream, debug_chunked_upload_and_post
 from retrans.segment import clip_help_epilog, cut_clip
 from retrans.serve import BindRefused, serve_forever
 from retrans.sources import resolve_page
@@ -32,18 +45,40 @@ def _parser() -> argparse.ArgumentParser:
 
     live = sub.add_parser(
         "live",
-        help="Resolve a page URL and restream live to X Media Studio RTMP (product command)",
+        help="Headless true-live ffmpeg restream (no HTTP UI; product command)",
     )
-    live.add_argument("page_url", help="Page URL that contains the live video (YouTube first)")
+    live.add_argument(
+        "page_url",
+        nargs="?",
+        default=None,
+        help=f"Live page URL (YouTube first). Else {SOURCE_URL_ENV} / --source.",
+    )
+    live.add_argument(
+        "--source",
+        dest="source_url",
+        default=None,
+        help=f"Live source URL (else positional / {SOURCE_URL_ENV})",
+    )
+    live.add_argument(
+        "--title",
+        default=None,
+        help=f"Operator label for this restream (else {TITLE_ENV} / {TITLE_ENV_ALIAS})",
+    )
+    live.add_argument(
+        "--env-file",
+        dest="env_file",
+        default=None,
+        help=f"Load KEY=VALUE file (prefer {RTMP_KEY_ENV}; values are never printed)",
+    )
     live.add_argument(
         "--rtmp-url",
         default=None,
-        help=f"Media Studio RTMP(S) URL (else {RTMP_URL_ENV})",
+        help=f"Override ingest URL (default {DEFAULT_RTMP_URL}; else {RTMP_URL_ENV})",
     )
     live.add_argument(
         "--rtmp-key",
         default=None,
-        help=f"Media Studio stream key (else {RTMP_KEY_ENV})",
+        help=f"Stream key (prefer {RTMP_KEY_ENV} / --env-file so the key is not in ps)",
     )
 
     resolve = sub.add_parser(
@@ -91,26 +126,90 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _apply_env_file(path: str | None) -> str | None:
+    """Load --env-file. Return an error string or None. Never logs values."""
+    if not path:
+        return None
+    try:
+        load_env_file(path)
+    except OSError:
+        return "could not read --env-file"
+    return None
+
+
+def _source_from(args: argparse.Namespace) -> str:
+    return (
+        (args.page_url or "").strip()
+        or (getattr(args, "source_url", None) or "").strip()
+        or env_value(SOURCE_URL_ENV)
+    )
+
+
+def _title_from(args: argparse.Namespace) -> str:
+    return (getattr(args, "title", None) or "").strip() or env_value(
+        TITLE_ENV, TITLE_ENV_ALIAS
+    )
+
+
 def _rtmp_from(args: argparse.Namespace) -> tuple[str, str] | str:
-    url = args.rtmp_url or os.environ.get(RTMP_URL_ENV, "")
-    key = args.rtmp_key or os.environ.get(RTMP_KEY_ENV, "")
-    if not url or not key:
+    url = (
+        (args.rtmp_url or "").strip()
+        or env_value(RTMP_URL_ENV)
+        or DEFAULT_RTMP_URL
+    )
+    key = (args.rtmp_key or "").strip() or env_value(RTMP_KEY_ENV)
+    if not key:
         return (
-            f"RTMP URL and key required via --rtmp-url/--rtmp-key or "
-            f"{RTMP_URL_ENV}/{RTMP_KEY_ENV}"
+            f"stream key required via {RTMP_KEY_ENV} or --env-file "
+            f"(or --rtmp-key)"
         )
     return url, key
 
 
+def _secrets(*extra: str | None) -> tuple[str, ...]:
+    found = [env_value(RTMP_KEY_ENV)]
+    found.extend(extra)
+    return tuple(s for s in found if s)
+
+
+def _print(msg: str, *secrets: str | None, file=None) -> None:
+    text = redact(msg, *_secrets(*secrets))
+    print(text, file=file, flush=True)
+
+
 def cmd_live(args: argparse.Namespace) -> int:
+    err = _apply_env_file(getattr(args, "env_file", None))
+    if err:
+        _print(err, file=sys.stderr)
+        return 2
+    source = _source_from(args)
+    if not source:
+        _print(
+            f"source URL required via page_url / --source / {SOURCE_URL_ENV}",
+            file=sys.stderr,
+        )
+        return 2
     creds = _rtmp_from(args)
     if isinstance(creds, str):
-        print(creds, file=sys.stderr)
+        _print(creds, file=sys.stderr)
         return 2
     rtmp_url, rtmp_key = creds
-    print("retrans live: resolving and restreaming (H.264+AAC/FLV → Media Studio)", flush=True)
-    print("Sending RTMP is not enough — Create Broadcast and Go Live in studio.x.com.", flush=True)
-    return XLiveRestream().run_foreground(args.page_url, rtmp_url, rtmp_key)
+    title = _title_from(args)
+    if title:
+        _print(f"retrans live: {title}", rtmp_key)
+    _print(
+        "retrans live: resolving and restreaming (H.264+AAC/FLV → Media Studio)",
+        rtmp_key,
+    )
+    _print(
+        "Sending RTMP is not enough — Create Broadcast and Go Live in studio.x.com.",
+        rtmp_key,
+    )
+    try:
+        return XLiveRestream().run_foreground(source, rtmp_url, rtmp_key)
+    except RestreamError as exc:
+        _print(str(exc), rtmp_key, file=sys.stderr)
+        return 1
 
 
 def cmd_resolve(args: argparse.Namespace) -> int:
@@ -171,5 +270,6 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         return 130
     except Exception as exc:  # noqa: BLE001 — CLI boundary
-        print(str(exc), file=sys.stderr)
+        extra = getattr(args, "rtmp_key", None)
+        _print(str(exc), extra, file=sys.stderr)
         return 1
