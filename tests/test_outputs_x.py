@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import json
+import queue
+import threading
 from pathlib import Path
 from urllib.request import Request
 
@@ -48,7 +50,7 @@ class _FakeProc:
         return self._code
 
     def wait(self, timeout=None):
-        return 0
+        return 0 if self._code is None else self._code
 
     def terminate(self):
         self._code = 0
@@ -123,6 +125,71 @@ def test_restream_start_redacts_key_on_immediate_exit():
         job.start("https://youtu.be/a", "rtmps://va.pscp.tv:443/x", "secret-key")
     assert "secret-key" not in str(exc.value)
     assert "***" in str(exc.value)
+
+
+class _DrainPipe:
+    def __init__(self):
+        self._q: queue.Queue[str | None] = queue.Queue()
+        self.reads = 0
+
+    def feed(self, text: str) -> None:
+        self._q.put(text if text.endswith("\n") else text + "\n")
+
+    def close(self) -> None:
+        self._q.put(None)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> str:
+        item = self._q.get()
+        if item is None:
+            raise StopIteration
+        self.reads += 1
+        return item
+
+    def read(self) -> str:
+        return ""
+
+
+def test_restream_drains_stderr_and_redacts():
+    class Resolver:
+        def resolve(self, page_url: str) -> str:
+            return "https://cdn.example/live.m3u8"
+
+    stderr = _DrainPipe()
+    proc = _FakeProc(code=None)
+    proc.stderr = stderr
+    spawned = {}
+
+    def popen(cmd, **kwargs):
+        spawned["kwargs"] = kwargs
+        return proc
+
+    job = XLiveRestream(resolver=Resolver(), popen=popen)
+    job.start(
+        "https://www.youtube.com/watch?v=abc",
+        "rtmps://va.pscp.tv:443/x",
+        "secret-key",
+    )
+    assert spawned["kwargs"]["stderr"] is not None
+    for i in range(40):
+        stderr.feed(f"progress {i} dest=rtmps://va.pscp.tv:443/x/secret-key")
+    for _ in range(80):
+        if stderr.reads >= 40:
+            break
+        threading.Event().wait(0.02)
+    assert stderr.reads >= 40
+    last = job.last_stderr_line()
+    assert last
+    assert "secret-key" not in last
+    assert "secret-key" not in job.ffmpeg_exit_error()
+    proc._code = 1
+    stderr.close()
+    assert job.poll() == 1
+    assert job.wait() == 1
+    assert "ffmpeg restream exited" in job.ffmpeg_exit_error()
+    assert "secret-key" not in job.ffmpeg_exit_error()
 
 
 class _FakeHTTP:

@@ -18,6 +18,7 @@ import subprocess
 import threading
 import urllib.error
 import urllib.request
+from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlparse
@@ -27,6 +28,7 @@ from retrans.ingest import NotLiveError
 from retrans.sources import resolve_page
 
 PopenFactory = Callable[..., subprocess.Popen]
+_STDERR_TAIL = 32
 
 
 class RestreamError(RuntimeError):
@@ -97,10 +99,19 @@ class XLiveRestream:
         self._popen = popen or subprocess.Popen
         self._proc: subprocess.Popen | None = None
         self._stop = threading.Event()
+        self._rtmp_url = ""
+        self._rtmp_key = ""
+        self._dest = ""
+        self._stderr_lock = threading.Lock()
+        self._stderr_lines: deque[str] = deque(maxlen=_STDERR_TAIL)
+        self._stderr_thread: threading.Thread | None = None
 
     def start(self, source_url: str, rtmp_url: str, rtmp_key: str) -> None:
         """Resolve + spawn ffmpeg. Returns once the process is running."""
         dest = join_rtmp_destination(rtmp_url, rtmp_key)
+        self._rtmp_url = rtmp_url
+        self._rtmp_key = rtmp_key
+        self._dest = dest
         try:
             if self._resolver is not None:
                 require = getattr(self._resolver, "require_live", None)
@@ -130,28 +141,82 @@ class XLiveRestream:
             raise RestreamError(
                 redact(f"restream failed to start: {exc}", rtmp_url, rtmp_key, dest)
             ) from exc
+        self._start_stderr_reader()
         if self._proc.poll() is not None:
-            err = ""
-            if self._proc.stderr is not None:
-                err = self._proc.stderr.read() or ""
+            self._join_stderr_reader(timeout=1.0)
+            err = self.last_stderr_line()
             raise RestreamError(
                 redact(
-                    f"ffmpeg exited immediately: {err.strip()}",
+                    f"ffmpeg exited immediately: {err}",
                     rtmp_url,
                     rtmp_key,
                     dest,
                 )
             )
 
+    def _start_stderr_reader(self) -> None:
+        """Drain ffmpeg stderr so a full PIPE cannot deadlock wait()."""
+        thread = threading.Thread(
+            target=self._drain_stderr,
+            name="retrans-ffmpeg-stderr",
+            daemon=True,
+        )
+        self._stderr_thread = thread
+        thread.start()
+
+    def _drain_stderr(self) -> None:
+        proc = self._proc
+        if proc is None or proc.stderr is None:
+            return
+        secrets = (self._rtmp_url, self._rtmp_key, self._dest)
+        try:
+            for raw in proc.stderr:
+                line = raw.rstrip("\r\n")
+                if not line:
+                    continue
+                with self._stderr_lock:
+                    self._stderr_lines.append(redact(line, *secrets))
+        except (ValueError, OSError):
+            return
+
+    def _join_stderr_reader(self, timeout: float | None = 1.0) -> None:
+        thread = self._stderr_thread
+        if thread is not None:
+            thread.join(timeout=timeout)
+
+    def last_stderr_line(self) -> str:
+        """Most recent non-empty redacted stderr line, or empty string."""
+        with self._stderr_lock:
+            for line in reversed(self._stderr_lines):
+                if line.strip():
+                    return line.strip()
+        return ""
+
+    def ffmpeg_exit_error(self) -> str:
+        """Operator-visible reason after an unexpected ffmpeg exit. Secrets redacted."""
+        last = self.last_stderr_line()
+        if last:
+            return f"ffmpeg restream exited: {last}"
+        return "ffmpeg restream exited"
+
+    def poll(self) -> int | None:
+        """ffmpeg poll(); None if not spawned or still running."""
+        if self._proc is None:
+            return None
+        return self._proc.poll()
+
     def wait(self) -> int:
         if self._proc is None:
             return 0
-        return int(self._proc.wait())
+        code = int(self._proc.wait())
+        self._join_stderr_reader(timeout=1.0)
+        return code
 
     def stop(self) -> None:
         self._stop.set()
         proc = self._proc
         if proc is None or proc.poll() is not None:
+            self._join_stderr_reader(timeout=1.0)
             return
         proc.terminate()
         try:
@@ -159,6 +224,7 @@ class XLiveRestream:
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
+        self._join_stderr_reader(timeout=1.0)
 
     def running(self) -> bool:
         return self._proc is not None and self._proc.poll() is None

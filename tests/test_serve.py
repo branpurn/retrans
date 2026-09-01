@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import queue
 import threading
 from http.client import HTTPConnection
 from http.server import HTTPServer
@@ -10,7 +11,7 @@ import pytest
 
 from retrans.config import LOOPBACK_HOST
 from retrans.ingest import StreamResolver
-from retrans.outputs.x import RestreamError
+from retrans.outputs.x import RestreamError, XLiveRestream
 from retrans.serve import (
     BindRefused,
     LiveController,
@@ -434,3 +435,224 @@ def test_start_rejects_true_only_via_live_status_true_print(api_factory):
     assert code == 200
     assert data["state"] == "starting"
     _req(port, "POST", "/api/live/stop")
+
+
+class _LinePipe:
+    """Iterable stderr stand-in a drain thread can block on."""
+
+    def __init__(self):
+        self._q: queue.Queue[str | None] = queue.Queue()
+        self._closed = False
+
+    def feed(self, text: str) -> None:
+        if not text.endswith("\n"):
+            text = text + "\n"
+        self._q.put(text)
+
+    def close(self) -> None:
+        if not self._closed:
+            self._closed = True
+            self._q.put(None)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> str:
+        item = self._q.get()
+        if item is None:
+            raise StopIteration
+        return item
+
+    def read(self) -> str:
+        chunks: list[str] = []
+        while True:
+            try:
+                item = self._q.get_nowait()
+            except queue.Empty:
+                break
+            if item is None:
+                break
+            chunks.append(item)
+        return "".join(chunks)
+
+
+class _ControllableProc:
+    """Mock ffmpeg: poll/wait/stderr are independently controllable."""
+
+    def __init__(self):
+        self._code: int | None = None
+        self._done = threading.Event()
+        self.stderr = _LinePipe()
+        self.terminated = False
+
+    def poll(self):
+        return self._code
+
+    def wait(self, timeout=None):
+        self._done.wait(timeout=timeout)
+        return 0 if self._code is None else self._code
+
+    def terminate(self):
+        self.terminated = True
+        self.die(0)
+
+    def kill(self):
+        self.die(-9)
+
+    def die(self, code: int, stderr: str = "") -> None:
+        if stderr:
+            self.stderr.feed(stderr)
+        self.stderr.close()
+        self._code = code
+        self._done.set()
+
+    def mark_dead(self, code: int, stderr: str = "") -> None:
+        """Make poll() report an exit without unblocking wait()."""
+        if stderr:
+            self.stderr.feed(stderr)
+        self.stderr.close()
+        self._code = code
+
+
+class _LivePageResolver:
+    def resolve(self, page_url: str) -> str:
+        return "https://cdn.example/live.m3u8"
+
+
+def _popen_holder() -> tuple[dict, object]:
+    holder: dict = {}
+
+    def popen(cmd, **_kwargs):
+        proc = _ControllableProc()
+        holder["proc"] = proc
+        holder["cmd"] = cmd
+        return proc
+
+    return holder, popen
+
+
+def _wait_status(port: int, wanted: str, tries: int = 80):
+    data: dict = {}
+    raw = ""
+    for _ in range(tries):
+        _, data, raw = _req(port, "GET", "/api/live/status")
+        if data.get("state") == wanted:
+            return data, raw
+        threading.Event().wait(0.05)
+    return data, raw
+
+
+def _assert_no_rtmp_secrets(data: dict, raw: str) -> None:
+    assert "rtmp_key" not in data
+    assert "rtmp_url" not in data
+    assert SECRET_KEY not in raw
+    assert SECRET_URL not in raw
+    err = data.get("error") or ""
+    assert SECRET_KEY not in err
+    assert SECRET_URL not in err
+    assert SECRET_KEY not in json.dumps(data)
+    assert SECRET_URL not in json.dumps(data)
+
+
+def test_ffmpeg_kill_mid_restream_status_error(api_factory):
+    holder, popen = _popen_holder()
+    port = api_factory(
+        LiveController(
+            restream_factory=lambda: XLiveRestream(
+                resolver=_LivePageResolver(),
+                popen=popen,
+            )
+        )
+    )
+    code, data, raw = _req(port, "POST", "/api/live/start", START_BODY)
+    assert code == 200
+    assert data["state"] == "starting"
+    _assert_no_rtmp_secrets(data, raw)
+
+    live, _ = _wait_status(port, "live")
+    assert live["state"] == "live"
+    proc: _ControllableProc = holder["proc"]
+    proc.die(
+        1,
+        stderr=f"Connection to {SECRET_URL}/{SECRET_KEY} failed: Broken pipe",
+    )
+
+    status, raw = _wait_status(port, "error")
+    assert status["state"] == "error"
+    assert status["error"]
+    assert "ffmpeg restream exited" in status["error"]
+    _assert_no_rtmp_secrets(status, raw)
+
+
+def test_ffmpeg_zero_exit_without_stop_is_error(api_factory):
+    holder, popen = _popen_holder()
+    port = api_factory(
+        LiveController(
+            restream_factory=lambda: XLiveRestream(
+                resolver=_LivePageResolver(),
+                popen=popen,
+            )
+        )
+    )
+    _req(port, "POST", "/api/live/start", START_BODY)
+    live, _ = _wait_status(port, "live")
+    assert live["state"] == "live"
+    holder["proc"].die(0, stderr="rtmp output closed")
+
+    status, raw = _wait_status(port, "error")
+    assert status["state"] == "error"
+    assert status["error"]
+    assert status["state"] != "stopped"
+    _assert_no_rtmp_secrets(status, raw)
+
+
+def test_status_flips_error_while_wait_blocked(api_factory):
+    """GET /api/live/status must not stay live if poll() says ffmpeg is dead."""
+    holder, popen = _popen_holder()
+    port = api_factory(
+        LiveController(
+            restream_factory=lambda: XLiveRestream(
+                resolver=_LivePageResolver(),
+                popen=popen,
+            )
+        )
+    )
+    _req(port, "POST", "/api/live/start", START_BODY)
+    live, _ = _wait_status(port, "live")
+    assert live["state"] == "live"
+    holder["proc"].mark_dead(
+        1,
+        stderr=f"server rejected key {SECRET_KEY} at {SECRET_URL}",
+    )
+
+    _, data, raw = _req(port, "GET", "/api/live/status")
+    assert data["state"] == "error"
+    assert data["error"]
+    _assert_no_rtmp_secrets(data, raw)
+    assert not holder["proc"]._done.is_set()
+
+
+def test_operator_stop_still_stopped_not_error(api_factory):
+    holder, popen = _popen_holder()
+    port = api_factory(
+        LiveController(
+            restream_factory=lambda: XLiveRestream(
+                resolver=_LivePageResolver(),
+                popen=popen,
+            )
+        )
+    )
+    _req(port, "POST", "/api/live/start", START_BODY)
+    live, _ = _wait_status(port, "live")
+    assert live["state"] == "live"
+
+    st, data, raw = _req(port, "POST", "/api/live/stop")
+    assert st == 200
+    assert data == {"ok": True, "state": "stopped"}
+    _assert_no_rtmp_secrets(data, raw)
+    assert holder["proc"].terminated
+
+    _, status, status_raw = _req(port, "GET", "/api/live/status")
+    assert status["state"] == "stopped"
+    assert status["error"] is None
+    _assert_no_rtmp_secrets(status, status_raw)

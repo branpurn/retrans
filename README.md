@@ -92,7 +92,7 @@ retrans serve
 | `POST` | `/api/live/stop` | `200 {"ok":true,"state":"stopped"}` (also `200`/`ok` if already idle) |
 | `GET` | `/api/live/status` | `200 {"ok":true,"state":"idle"\|"starting"\|"live"\|"error"\|"stopped","source_url":"…" or null,"error":null or string}` |
 
-Responses **never** echo `rtmp_key` or `rtmp_url`.
+Responses **never** echo `rtmp_key` or `rtmp_url`. If ffmpeg exits unexpectedly (non-zero **or** zero without an operator stop), `GET /api/live/status` becomes `state=error` with a redacted reason — not a stuck `live` or a clean `stopped`. Operator `POST /api/live/stop` is still `stopped`.
 
 ## Operator UI (this PR)
 
