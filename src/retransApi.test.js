@@ -28,7 +28,10 @@ describe("retransApi lock", () => {
     assert.doesNotMatch(src, /\/api\/clip/);
   });
 
-  it("operator is 8788 same-origin /api; Vite 5173 is DEV ONLY", () => {
+  it("operator is 8788 same-origin /api; Vite 5173 is not the operator path", () => {
+    const design = readFileSync(new URL("../design/primary-flow.md", import.meta.url), "utf8");
+    assert.match(design, /\*\*Operator URL:\*\* `http:\/\/127\.0\.0\.1:8788` \*\*only\*\*/);
+    assert.match(design, /Vite `5173` is not the operator path/);
     assert.match(src, /const START = "\/api\/live\/start"/);
     assert.match(src, /const STOP = "\/api\/live\/stop"/);
     assert.match(src, /const STATUS = "\/api\/live\/status"/);
@@ -45,9 +48,9 @@ describe("retransApi lock", () => {
     assert.doesNotMatch(html, /http:\/\/127\.0\.0\.1:8788\/api/);
     assert.match(vite, /base:\s*["']\.\/["']/);
     assert.match(vite, /const BACKEND = "http:\/\/127\.0\.0\.1:8788"/);
+    assert.match(readme, /\*\*Operator URL:\*\* `http:\/\/127\.0\.0\.1:8788` \*\*only\*\*/);
+    assert.match(readme, /Vite `5173` is not the operator path/);
     assert.match(readme, /Open http:\/\/127\.0\.0\.1:8788/);
-    assert.match(readme, /Operator open path is \*\*http:\/\/127\.0\.0\.1:8788\*\* only/);
-    assert.match(readme, /DEV ONLY/);
     assert.match(readme, /proxies \/api → http:\/\/127\.0\.0\.1:8788/);
     assert.doesNotMatch(readme, /Open http:\/\/127\.0\.0\.1:5173/);
     assert.doesNotMatch(readme, /open the Vite URL/);

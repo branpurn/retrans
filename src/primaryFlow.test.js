@@ -100,6 +100,7 @@ describe("primary-flow chrome lock", () => {
   it("Start sends source_url only; no clip UI; Vite loopback 8788", () => {
     const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
     const api = readFileSync(new URL("./retransApi.js", import.meta.url), "utf8");
+    const design = readFileSync(new URL("../design/primary-flow.md", import.meta.url), "utf8");
     assert.match(main, /retransApi\.start\(\s*\{\s*source_url:\s*readField\(els\.source\)\.trim\(\)\s*,?\s*\}\s*\)/);
     assert.doesNotMatch(main, /\/api\/clip/);
     assert.doesNotMatch(html, /\/api\/clip/);
@@ -112,6 +113,10 @@ describe("primary-flow chrome lock", () => {
     assert.doesNotMatch(api, /http:\/\/127\.0\.0\.1:5173/);
     assert.doesNotMatch(main, /http:\/\/127\.0\.0\.1:5173/);
     assert.doesNotMatch(html, /:5173/);
+    assert.match(design, /\*\*Operator URL:\*\* `http:\/\/127\.0\.0\.1:8788` \*\*only\*\*/);
+    assert.match(design, /Vite `5173` is not the operator path/);
+    assert.match(readme, /\*\*Operator URL:\*\* `http:\/\/127\.0\.0\.1:8788` \*\*only\*\*/);
+    assert.match(readme, /Vite `5173` is not the operator path/);
     assert.match(readme, /Open http:\/\/127\.0\.0\.1:8788/);
     assert.doesNotMatch(readme, /Open http:\/\/127\.0\.0\.1:5173/);
   });

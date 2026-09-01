@@ -1,6 +1,6 @@
 /**
- * Locked live API. Operator is http://127.0.0.1:8788 — same-origin fetch("/api/...").
- * Vite 5173 (`npm run dev` only) proxies /api → http://127.0.0.1:8788 (never 0.0.0.0).
+ * Locked live API. Operator URL: http://127.0.0.1:8788 only — same-origin fetch("/api/...").
+ * Vite 5173 is not the operator path (`npm run dev` may proxy /api → 8788; never 0.0.0.0).
  * Never fetch an absolute :5173 or :8788 API URL.
  *
  * PUT    /api/live/credentials  { rtmp_url, rtmp_key } → 200 { ok, configured:true }
