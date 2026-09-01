@@ -4,6 +4,14 @@ function nonEmptyError(error) {
   return typeof error === "string" && error.trim() !== "";
 }
 
+/**
+ * Real GET /api/live/status session payload only.
+ * Network / proxy 502 / non-OK failures are not usable — chrome stays as-is (Idle).
+ */
+export function isUsableStatus(result) {
+  return Boolean(result && result.httpStatus === 200);
+}
+
 /** Map start/stop/status result → operator backend state for the status pill. */
 export function backendFromResult(result) {
   if (!result) return "error";
