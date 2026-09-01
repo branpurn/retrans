@@ -24,7 +24,6 @@ from retrans.credentials import (
     load_credentials,
     save_credentials,
 )
-from retrans.ingest import StreamResolver
 from retrans.serve import (
     BindRefused,
     LiveController,
@@ -34,10 +33,36 @@ from retrans.serve import (
     validate_start_payload,
 )
 
-from tests.test_serve import ImmediateLive, SECRET_KEY, SECRET_URL, SOURCE, _live_resolver
-
+SECRET_KEY = "super-secret-stream-key-xyz"
+SECRET_URL = "rtmps://va.pscp.tv:443/x"
+SOURCE = "https://www.youtube.com/watch?v=press"
 OTHER_URL = "rtmp://other.example/live"
 OTHER_KEY = "other-stream-key-abc"
+
+
+class ImmediateLive:
+    def __init__(self):
+        self.stopped = False
+        self._started = threading.Event()
+
+    def start(self, source_url, rtmp_url, rtmp_key):
+        assert source_url == SOURCE
+        assert rtmp_key == SECRET_KEY
+        self._started.set()
+
+    def wait(self):
+        self._started.wait(timeout=2)
+        while not self.stopped:
+            threading.Event().wait(0.05)
+        return 0
+
+    def stop(self):
+        self.stopped = True
+
+
+class _AlwaysLive:
+    def require_live(self, _url: str) -> None:
+        return None
 
 
 @pytest.fixture(autouse=True)
@@ -52,10 +77,10 @@ def isolate_store(tmp_path, monkeypatch):
 def api_factory():
     servers = []
 
-    def start(controller: LiveController, resolver: StreamResolver | None = None):
+    def start(controller: LiveController, resolver=None):
         httpd = HTTPServer(
             (LOOPBACK_HOST, 0),
-            make_handler(controller, resolver=resolver or _live_resolver()),
+            make_handler(controller, resolver=resolver or _AlwaysLive()),
         )
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
