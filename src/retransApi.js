@@ -12,7 +12,8 @@ const START = "/api/live/start";
 const STOP = "/api/live/stop";
 const STATUS = "/api/live/status";
 
-function redactSecrets(text, secrets) {
+/** Redact rtmp_url / rtmp_key substrings only; leave NotLiveError text otherwise unchanged. */
+export function redactSecrets(text, secrets = []) {
   let out = String(text ?? "");
   for (const secret of secrets) {
     const value = String(secret ?? "");
@@ -76,9 +77,8 @@ export async function stop() {
 export async function status() {
   const res = await fetch(STATUS, { cache: "no-store" });
   const data = await readBody(res);
-  const result = publicStatus(data, res.status);
-  if (!res.ok && !result.error) result.error = "status failed";
-  return result;
+  // Do not invent a synthetic status error — poll/boot ignore non-OK and keep Idle.
+  return publicStatus(data, res.status);
 }
 
 export const retransApi = { start, stop, status };

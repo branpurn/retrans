@@ -1,6 +1,14 @@
 import "./style.css";
 import { parseSourceUrl } from "./sourceUrl.js";
-import { canStart, canStop, pillFor, pillLabel } from "./enablement.js";
+import {
+  backendFromResult,
+  canStart,
+  canStop,
+  isUsableStatus,
+  pillFor,
+  pillLabel,
+  transportHelper,
+} from "./enablement.js";
 import { retransApi } from "./retransApi.js";
 
 const els = {
@@ -86,13 +94,10 @@ function render() {
   });
   els.stopBtn.disabled = !canStop({ state: state.backend });
 
-  if (state.backend === "live") {
-    els.helper.textContent = "Retransmitting live to X";
-  } else if (state.backend === "error" && state.error) {
-    els.helper.textContent = redact(state.error);
-  } else {
-    els.helper.textContent = "Idle until preview + destination + ack";
-  }
+  els.helper.textContent = transportHelper({
+    backend: state.backend,
+    error: state.error ? redact(state.error) : "",
+  });
 }
 
 function runPreview() {
@@ -136,8 +141,8 @@ function invalidatePreviewIfSourceChanged() {
 
 function applyBackend(result) {
   if (!result) return;
-  state.backend = result.state || "error";
-  state.error = result.error || "";
+  state.backend = backendFromResult(result);
+  state.error = typeof result.error === "string" ? result.error : "";
   if (result.source_url && !state.previewOk) {
     els.source.value = result.source_url;
     applyPreview(parseSourceUrl(result.source_url));
@@ -147,15 +152,19 @@ function applyBackend(result) {
   render();
 }
 
+/** Apply GET /api/live/status only when it is a real session payload. */
+function applyStatus(result) {
+  if (!isUsableStatus(result)) return;
+  applyBackend(result);
+}
+
 function startPolling() {
   if (pollTimer) return;
   pollTimer = setInterval(async () => {
     try {
-      applyBackend(await retransApi.status());
+      applyStatus(await retransApi.status());
     } catch {
-      state.backend = "error";
-      state.error = "status failed";
-      render();
+      /* status failure: keep current chrome; never flip to Error */
     }
   }, 1000);
 }
@@ -221,9 +230,9 @@ els.stopBtn.addEventListener("click", async () => {
 async function boot() {
   render();
   try {
-    applyBackend(await retransApi.status());
+    applyStatus(await retransApi.status());
   } catch {
-    render();
+    /* boot status failure: stay Idle; keep idle transport helper */
   }
 }
 

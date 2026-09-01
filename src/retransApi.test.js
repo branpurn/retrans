@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 describe("retransApi lock", () => {
   const src = readFileSync(new URL("./retransApi.js", import.meta.url), "utf8");
   const vite = readFileSync(new URL("../vite.config.js", import.meta.url), "utf8");
+  const css = readFileSync(new URL("./style.css", import.meta.url), "utf8");
 
   it("targets the locked loopback proxy, never 0.0.0.0", () => {
     assert.match(vite, /target: BACKEND/);
@@ -20,4 +21,11 @@ describe("retransApi lock", () => {
     assert.match(src, /rtmp_key/);
     assert.doesNotMatch(src, /\/api\/clip/);
   });
+
+  it("shell does not clip helpers with overflow:hidden", () => {
+    assert.doesNotMatch(css, /html,\s*body\s*\{[^}]*overflow:\s*hidden/s);
+    assert.doesNotMatch(css, /#app\s*\{[^}]*overflow:\s*hidden/s);
+    assert.doesNotMatch(css, /\.body\s*\{[^}]*overflow:\s*hidden/s);
+  });
 });
+
