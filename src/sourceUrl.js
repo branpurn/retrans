@@ -55,21 +55,13 @@ export function parseSourceUrl(raw) {
     isLive = true;
   }
 
-  const title = videoId
-    ? isLive
-      ? `YouTube live ${videoId}`
-      : `YouTube source ${videoId}`
-    : isLive
-      ? "YouTube live"
-      : "YouTube source";
-
   return {
     ok: true,
     href: url.href,
     host,
     videoId,
     isLive,
-    title,
+    title: "",
     thumbnail: videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : "",
   };
 }
