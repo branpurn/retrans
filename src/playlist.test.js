@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   addUrl,
+  isNaturalEnd,
   moveUrl,
   nowPlayingCopy,
   parsePlaylistUrl,
+  playlistPos,
   playlistUrls,
   removeAt,
   sessionIndex,
@@ -68,18 +70,16 @@ describe("playlist", () => {
     });
   });
 
-  it("now-playing uses status source_url + source_index; never secrets", () => {
+  it("now-playing is compact {source_index+1}/{n}; natural end is not Error", () => {
     assert.equal(sessionIndex({ source_index: 1 }), 1);
     assert.equal(sessionIndex({}), 0);
-    assert.match(
-      nowPlayingCopy({ source_url: VOD, source_index: 0 }, 2),
-      /Item 1 of 2\. Next starts when this ends\./,
-    );
-    assert.match(
-      nowPlayingCopy({ source_url: LIVE, source_index: 1 }, 2),
-      /Item 2 of 2\. Last in the playlist/,
-    );
-    assert.match(nowPlayingCopy({ source_url: VOD }, 1), /One source/);
+    assert.equal(playlistPos({ source_url: VOD, source_index: 1 }, 5), "2/5");
+    assert.equal(nowPlayingCopy({ source_url: VOD, source_index: 0 }, 2), "1/2");
+    assert.equal(nowPlayingCopy({ source_url: LIVE, source_index: 1 }, 2), "2/2");
+    assert.equal(isNaturalEnd({ state: "stopped", error: null }), true);
+    assert.equal(isNaturalEnd({ state: "idle", error: "" }), true);
+    assert.equal(isNaturalEnd({ state: "error", error: "" }), false);
+    assert.equal(isNaturalEnd({ state: "live", error: null }), false);
     const src = readFileSync(new URL("./playlist.js", import.meta.url), "utf8");
     assert.doesNotMatch(src, /rtmp_key/);
     assert.doesNotMatch(src, /rtmp_url/);

@@ -16,8 +16,9 @@ import { YOUTUBE_FIRST_HELPER, isPreviewProbeFail, previewPaint } from "./previe
 import { readField, writeField, writeSourceIfNeeded } from "./fields.js";
 import {
   addUrl,
+  isNaturalEnd,
   moveUrl,
-  nowPlayingCopy,
+  playlistPos,
   playlistUrls,
   removeAt,
 } from "./playlist.js";
@@ -87,6 +88,8 @@ const state = {
   keysError: "",
   playlist: [],
   selectedPlIndex: -1,
+  previewByUrl: {},
+  currentSource: "",
 };
 
 let pollTimer = null;
@@ -130,6 +133,9 @@ function applyChrome(next) {
 function applyPaint(model, parsed) {
   state.parsed = parsed;
   state.previewOk = Boolean(model.previewOk);
+  if (parsed?.ok && parsed.href) {
+    state.previewByUrl[parsed.href] = Boolean(model.previewOk);
+  }
   const helper = model.helper || "";
   els.pasteHelper.textContent = helper || YOUTUBE_FIRST_HELPER;
   els.pasteHelper.classList.toggle("hidden", !helper);
@@ -169,18 +175,24 @@ function selectedBusy() {
     && Boolean(state.selectedKeyId);
 }
 
+function playlistReady() {
+  const urls = playlistUrls(state.playlist, readField(els.source).trim());
+  if (urls.length === 0) return false;
+  return urls.every((href) => state.previewByUrl[href] === true);
+}
+
 function gate() {
   const unused = unusedKeys(state.keys, state.sessions);
-  const selectedKeyId = unused.some((key) => key.id === state.selectedKeyId)
-    ? state.selectedKeyId
-    : "";
+  const kept = Boolean(state.selectedKeyId) && state.keys.some((key) => key.id === state.selectedKeyId);
+  const selectedKeyId = kept ? state.selectedKeyId : "";
+  const busy = Boolean(selectedKeyId) && unused.every((key) => key.id !== selectedKeyId);
   return {
-    previewOk: state.previewOk,
+    previewOk: playlistReady() || (state.previewOk && state.playlist.length === 0),
     configured: state.keys.length > 0 || state.justSaved,
     ack: els.ack.checked,
     state: state.backend,
-    selectedKeyId,
-    selectedBusy: Boolean(selectedKeyId) && selectedBusy(),
+    selectedKeyId: busy ? "" : selectedKeyId,
+    selectedBusy: busy,
   };
 }
 
@@ -217,14 +229,18 @@ function renderKeyList() {
 function renderKeyPicker() {
   const unused = unusedKeys(state.keys, state.sessions);
   const previous = state.selectedKeyId;
+  const kept = state.keys.find((key) => key.id === previous);
+  const options = unused.slice();
+  // Same key_id for the whole run — do not re-Select when that key is in use.
+  if (kept && !options.some((key) => key.id === kept.id)) options.unshift(kept);
   els.keyPicker.replaceChildren();
-  for (const key of unused) {
+  for (const key of options) {
     const opt = document.createElement("option");
     opt.value = key.id;
     opt.textContent = key.name;
     els.keyPicker.append(opt);
   }
-  if (unused.some((key) => key.id === previous)) {
+  if (kept) {
     els.keyPicker.value = previous;
     state.selectedKeyId = previous;
   } else if (unused[0]) {
@@ -282,14 +298,15 @@ function activeSession() {
 
 function renderNowPlaying() {
   const sess = activeSession();
-  const copy = nowPlayingCopy(sess, state.playlist.length);
+  const total = state.playlist.length;
+  const pos = playlistPos(sess || { source_index: 0 }, total);
   const url = sess?.source_url || "";
-  if (!copy && !url) {
+  if (!pos && !url) {
     els.playlistNow.textContent = "";
     els.playlistNow.classList.add("hidden");
     return;
   }
-  els.playlistNow.textContent = url ? `${url}\n${copy}` : copy;
+  els.playlistNow.textContent = [pos, url].filter(Boolean).join(" ");
   els.playlistNow.classList.remove("hidden");
 }
 
@@ -299,10 +316,8 @@ function renderSessions() {
     const li = document.createElement("li");
     const source = document.createElement("span");
     source.className = "sess-source";
-    const index = Number.isInteger(sess.source_index) ? sess.source_index + 1 : 0;
-    source.textContent = index
-      ? `${index}. ${sess.source_url || ""}`
-      : sess.source_url || "";
+    const pos = playlistPos(sess, state.playlist.length);
+    source.textContent = pos ? `${pos} ${sess.source_url || ""}` : sess.source_url || "";
     const name = document.createElement("span");
     name.className = "sess-name";
     name.textContent = sess.name || "";
@@ -420,9 +435,30 @@ function applyOperator(result, source) {
     backendFromResult(aggregated) !== "error";
   state.backend = next.backend;
   state.error = next.error;
+  if (
+    source === "status" &&
+    isNaturalEnd({ ...aggregated, error: result.error }) &&
+    state.backend === "error" &&
+    !stuckError
+  ) {
+    state.backend = aggregated.state === "idle" ? "idle" : "stopped";
+    state.error = "";
+  }
   if (stuckError) {
     render();
     return;
+  }
+  const sess = activeSession();
+  if (sess?.source_url && sess.source_url !== state.currentSource) {
+    state.currentSource = sess.source_url;
+    const parsed = parseSourceUrl(sess.source_url);
+    if (parsed.ok) {
+      retransApi.preview(parsed.href).then((preview) => {
+        if (preview.error) preview.error = redact(preview.error);
+        applyPreview(parsed, preview);
+        render();
+      }).catch(() => {});
+    }
   }
   if (result.source_url && !state.previewOk && state.playlist.length === 0) {
     // Restore only when the typed value is empty/wrong — never append, never rewrite the same URL.

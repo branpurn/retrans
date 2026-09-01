@@ -77,23 +77,25 @@ export function sessionIndex(session) {
   return Number.isInteger(n) && n >= 0 ? n : 0;
 }
 
+/** Compact Beat 3 position: `{source_index+1}/{n}` e.g. `2/5`. */
+export function playlistPos(session, total = 0) {
+  const n = Number.isInteger(total) && total > 0 ? total : 0;
+  if (!n) return "";
+  return `${sessionIndex(session) + 1}/${n}`;
+}
+
 /**
- * Retrans beat copy. Status gives current source_url + source_index.
- * Local length fills "of N" when we still have the list.
+ * Retrans beat: current source + compact position. No editor maze.
  */
 export function nowPlayingCopy(session, total = 0) {
-  const url = typeof session?.source_url === "string" ? session.source_url : "";
-  if (!url) return "";
-  const index = sessionIndex(session);
-  const n = index + 1;
-  if (Number.isInteger(total) && total > 1) {
-    if (n >= total) {
-      return `Item ${n} of ${total}. Last in the playlist — it stops when this ends.`;
-    }
-    return `Item ${n} of ${total}. Next starts when this ends.`;
-  }
-  if (Number.isInteger(total) && total === 1) {
-    return "One source. It stops when this ends.";
-  }
-  return "Next starts when this ends if more remain. Stop ends the whole playlist.";
+  return playlistPos(session, total);
+}
+
+/** Exhausted playlist is Idle/Stopped — never invent Error from a natural end. */
+export function isNaturalEnd(result) {
+  if (!result) return false;
+  if (result.state === "error") return false;
+  if (result.state !== "idle" && result.state !== "stopped") return false;
+  const error = result.error;
+  return error == null || (typeof error === "string" && error.trim() === "");
 }

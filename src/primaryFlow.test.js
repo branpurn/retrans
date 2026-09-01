@@ -64,7 +64,7 @@ describe("primary-flow chrome lock", () => {
   it("locks Beat 2 Drop link, unused-key picker, ack, Continue", () => {
     assert.match(html, />Drop link</);
     assert.match(html, /id="source_url"[^>]*type="text"/s);
-    assert.match(html, /placeholder="Paste YouTube live URL"/);
+    assert.match(html, /placeholder="Paste YouTube URL"/);
     assert.match(html, /id="source_url"[^>]*autocomplete="off"/s);
     assert.doesNotMatch(html, /id="source_url"[^>]*type="url"/s);
     assert.match(html, /id="add-url-btn"[^>]*>Add</s);
@@ -99,7 +99,8 @@ describe("primary-flow chrome lock", () => {
     assert.doesNotMatch(beat3, /id="rtmp_url"/);
     assert.doesNotMatch(beat3, /id="rtmp_key"/);
     assert.match(main, /retransApi\.stop\(\{\s*session_id:/);
-    assert.match(main, /nowPlayingCopy/);
+    assert.match(main, /playlistPos/);
+    assert.match(main, /do not re-Select/);
   });
 
   it("does not paint parseSourceUrl as display before preview API", () => {
