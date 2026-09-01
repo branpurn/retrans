@@ -18,9 +18,9 @@ True **LIVE** only. Not clip-post. Not VOD. Not file upload. Never Posted / Clip
 
 Bind and proxy **127.0.0.1 only**. Never `0.0.0.0`, LAN, or hotspot.
 
-**Operator URL:** `http://127.0.0.1:8788` **only** (same origin serves UI + `/api`). Vite `5173` is not the operator path (dev proxy may still exist for Frontend work; operators open 8788).
+**Operator URL:** `http://127.0.0.1:8788` **only** (same origin serves UI + `/api`). **One Docker compose** is the operator form factor: that compose binds **127.0.0.1:8788 only**. Operators open that URL. Not Vite `5173`. Not a second published port. Not `0.0.0.0` / LAN / hotspot. Vite `5173` is not the operator path (dev proxy may still exist for Frontend work; operators open 8788).
 
-Sign-in is **not** X OAuth. Sign-in is a one-time Media Studio RTMP save.
+Sign-in is **not** X OAuth. Sign-in is a Media Studio stream-key save (named keys; RTMP URL hidden by default).
 
 ## Chrome
 
@@ -36,11 +36,11 @@ Sign-in is **not** X OAuth. Sign-in is a one-time Media Studio RTMP save.
 ### Status rules (from layout-v1 Error chrome)
 
 - **Idle-on-poll-fail.** Boot `GET /api/live/status` failure and mid-session status poll / network failures MUST keep the current pill (fresh load = Idle). Never flip the pill to Error for a failed status poll. Never invent helper text like `status failed`.
-- **Error pill** only after a real start failure (HTTP 400 or equivalent) or a usable status payload (`GET /api/live/status` HTTP 200) with nonempty `status.error` / `state === "error"`. Idle + `error: null` (or empty) stays Idle / Preview. Never invent Error from a poll fail. **Not** from `GET /api/live/preview` 502 / probe fail (Drop-link helper only; see Beat 2).
-- **Error sticks until Stop.** After the UI enters Error (start HTTP 400 / equivalent, or usable status with nonempty `status.error` / `state === "error"`), keep the pill Error and the error helper until the operator presses **Stop**. Do **not** auto-flip Error → Idle / Preview / Stopped when a later successful status poll returns `idle` / empty error / no longer `error` (the ~5s auto-clear bug).
-- **Stop clears Error.** `POST /api/live/stop` (or Stop click) is the dismiss path from Error. After Stop succeeds, normal status mapping resumes (Idle / Stopped per existing locks).
-- **Stop enablement.** Stop is enabled while LIVE **or** while Error (so Error can be cleared).
-- **Pill lock.** Exact `data-status` / backend → copy + tokens. Do not invent other labels.
+- **Error pill** only after a real start failure (HTTP 400 or equivalent) or a usable status payload (`GET /api/live/status` HTTP 200) with nonempty `status.error` / `state === "error"` (or the same on a `sessions[]` entry). Idle + `error: null` (or empty) stays Idle / Preview. Never invent Error from a poll fail. **Not** from `GET /api/live/preview` 502 / probe fail (Drop-link helper only; see Beat 2).
+- **Error sticks until Stop.** After the UI enters Error (start HTTP 400 / equivalent, or usable status with nonempty `status.error` / `state === "error"`, or a session row in that state), keep the pill Error and the error helper until the operator presses **Stop** for that session. Do **not** auto-flip Error → Idle / Preview / Stopped when a later successful status poll returns `idle` / empty error / no longer `error` (the ~5s auto-clear bug).
+- **Stop clears Error.** `POST /api/live/stop` (or Stop click) is the dismiss path from Error. Body `{ session_id }` **or** `{ key_id }`. After Stop succeeds, normal status mapping resumes (Idle / Stopped per existing locks).
+- **Stop enablement.** Stop is enabled while that session is LIVE **or** Error (so Error can be cleared). Concurrent sessions: each Beat 3 row has its own Stop.
+- **Pill lock.** Exact `data-status` / backend → copy + tokens. Do not invent other labels. Beat 3 list pills are **per** `sessions[]` entry. Top-bar pill: Error if any session is Error; else LIVE if any is live; else Starting if any is starting; else Idle / Stopped / Preview per existing mapping.
 
 | data-status / backend | Pill copy (exact) | Tokens |
 | --- | --- | --- |
@@ -57,38 +57,46 @@ Sign-in is **not** X OAuth. Sign-in is a one-time Media Studio RTMP save.
 
 On load:
 
-1. `GET /api/live/credentials`
-2. `configured: false` (or first visit / GET fail treated as not configured) → **Beat 1**
-3. `configured: true` → skip to **Beat 2**
+1. `GET /api/live/keys`
+2. Empty `keys` list (or first visit / GET fail treated as empty) → **Beat 1**
+3. Any saved named key → skip to **Beat 2**
 
-Forward only:
+Forward only (still three beats — no fourth page):
 
-- Beat 1 Save success → Beat 2
+- Beat 1 first Save success → Beat 2
 - Beat 2 Continue → Beat 3
 
-Optional, not a settings maze:
+Same-beat / back links, not a settings maze:
 
-- On Beat 2 only: small **Change destination** link → Beat 1 (empty fields; never prefill secrets)
+- On Beat 1: **Add** another named key (Add + Save) stays on Beat 1
+- On Beat 2: small **Change destination** / **Add key** link → Beat 1 (empty fields; never prefill secrets)
+- On Beat 3: **Drop another** / back to Beat 2 with an unused named key. If no unused key, helper to add a key → Beat 1 (empty fields)
 
-No other pages. No OAuth screens. No multi-dest. No clip-post.
+No other pages. No OAuth screens. No clip-post. No `/api/live/credentials` chrome.
 
 ## Beat 1 — Sign in
 
-Shown when `GET /api/live/credentials` → `{ configured: false }` (or first visit).
+Shown when `GET /api/live/keys` → empty `keys` (or first visit). Also when the operator chooses Add key / Change destination from Beat 2 or Beat 3.
 
 | Element | Rule |
 | --- | --- |
 | Title | `Sign in` — clickable `?` next to this title (same beat) |
 | Helper (one short line) | `Save Media Studio RTMP once. Not X OAuth.` — default visible helper |
-| Field | RTMP URL — `type="text"` |
-| Field | Stream key — `type="password"` |
+| Field | Optional short name — `type="text"` |
+| Field | Stream key — `type="password"` (primary; **no** RTMP URL field by default) |
+| Advanced | Collapsed disclosure **OFF** by default. When on: RTMP URL override (`type="text"`). Empty override = default ingest |
+| List | Named key list — **names only**, never keys |
+| Add | **Add** another named key on this beat (Add + Save via `PUT /api/live/keys`) |
+| Delete | `DELETE /api/live/keys/<id>` (confirm is fine; not a settings page) |
 | Primary | **Save** |
 
-- Save calls `PUT /api/live/credentials` with `{ rtmp_url, rtmp_key }` only.
-- On success → Beat 2. Clear the fields from the DOM. **Never show secrets again after save.**
-- Stream key stays `type="password"`. After Save, the key is **never shown again** (fields cleared from the DOM). `GET /api/live/credentials` returns `{ configured }` only — never echo `rtmp_url` or `rtmp_key`.
-- If `configured: true` at boot, skip this beat.
-- Sign-in is a one-time Media Studio RTMP save. Not X OAuth. No “Sign in with X” button.
+Default ingest (not a secret; document it): `rtmps://va.pscp.tv:443/x`. Hide the RTMP URL field unless Advanced is on.
+
+- Save calls `PUT /api/live/keys` with the stream key + optional name + optional `rtmp_url` override. Omit `rtmp_url` to use the default ingest.
+- On first Save success → Beat 2. Add + Save stays on Beat 1. Clear the key field from the DOM. **Never show secrets again after save.**
+- Stream key stays `type="password"`. After Save, the key is **never shown again** (fields cleared from the DOM). `GET /api/live/keys` returns id + name (+ `in_use` if status does not already say so) **only** — never echo `rtmp_key`, `rtmp_url`, or the key value.
+- If any named key exists at boot, skip this beat.
+- Sign-in is a Media Studio stream-key save. Not X OAuth. No “Sign in with X” button.
 
 ### Sign in `?` help (same beat)
 
@@ -100,7 +108,7 @@ Help copy — short steps only (exact path names):
 
 1. Open studio.x.com (Creator / Media Studio Producer)
 2. Sources → Create Source (RTMP)
-3. Copy RTMP(S) URL + stream key into the two Sign in fields
+3. Copy the stream key into the Sign in field (not a two-field URL + key form)
 
 Also one short line in that help (not a Broadcast UI): **Broadcasts → Create Broadcast** + **Go Live** still happen on X after Retrans starts. That is not this beat. Do not add Broadcast UI here.
 
@@ -113,6 +121,7 @@ No extra Media Studio maze beyond this `?` disclosure. No settings page. No “S
 | Title | `Drop link` |
 | Field | Single large URL field. Placeholder: `Paste YouTube live URL` |
 | Preview | On blur / Enter, or a Preview control — preview card (fields below) |
+| Destination | Compact named-key picker — unused keys only (names from `GET /api/live/keys`; in-use from `status.sessions[]`) |
 | Gate | Checkbox, exact copy: `I have permission or fair use to retransmit this live.` |
 | Primary | **Continue** (or **Next**) |
 
@@ -152,63 +161,72 @@ Enable Continue only when **all** are true:
 
 - preview ok
 - ack checked
-- credentials configured (`GET /api/live/credentials` → `configured: true`)
+- a named key that is **not** already in a live/starting session is selected (names from `GET /api/live/keys`; in-use from `status.sessions[]`)
 
 YouTube first. Non-YouTube: helper `YouTube first` (exact). Other URLs stay not-ok for preview.
 
-Optional: small **Change destination** link (not a button row, not a settings page) that returns to Beat 1 with empty fields.
+Optional: small **Change destination** / **Add key** link (not a button row, not a settings page) that returns to Beat 1 with empty fields.
 
-No RTMP fields on this beat. No start/stop. Preview payload has no RTMP fields — never display rtmp secrets from preview.
+No RTMP fields on this beat. No start/stop. Preview payload has no RTMP fields — never display rtmp secrets from preview. Named-key picker shows **names only**.
 
 ## Beat 3 — Retrans
 
+Keep three beats and 480px. Concurrent restreams live on this beat (not a fourth page). One named key per restream. Operator can run multiple live sources at once.
+
 | Element | Rule |
 | --- | --- |
-| Source | Compact source preview — same card fields as Beat 2 (thumbnail, real `title` when available, host, **LIVE** badge iff `is_live === true`) + the top-bar status pill |
+| Sessions | Compact list from `status.sessions[]`: source + **named** key + per-session pill/status + **Stop** |
+| Source | Compact source preview for the current start — same card fields as Beat 2 (thumbnail, real `title` when available, host, **LIVE** badge iff `is_live === true`) + the top-bar status pill |
 | Primary | **Start live retrans** — enabled when ready |
-| Danger | **Stop** — enabled while LIVE **or** Error |
+| Another | **Drop another** / back to Beat 2 using an unused named key. If none unused, helper to add a key → Beat 1 |
+| Danger | **Stop** — per session, enabled while that session is LIVE **or** Error |
 | Helper | see below |
 
-Ready for Start (does **not** disable Stop on Error):
+Ready for Start (does **not** disable Stop on Error / other live sessions):
 
 - preview ok
 - ack already checked (from Beat 2)
-- credentials configured
-- status is not `starting` and not `live`
+- selected unused named key (`key_id`)
+- that key is not already `starting` or `live` in `sessions[]`
 
-Stop stays enabled on Error even when Start is not ready. Stop is the only dismiss path from Error.
+Stop stays enabled on a session in Error even when Start is not ready. Stop is the only dismiss path from that session’s Error.
 
-Start calls `POST /api/live/start` with `{ source_url }` **only**. Do not send `rtmp_url` or `rtmp_key`. Credentials were already saved on Beat 1.
+Start calls `POST /api/live/start` with `{ source_url, key_id }` **only**. Do not send `rtmp_url` or `rtmp_key`. The named key was already saved on Beat 1.
+
+Stop calls `POST /api/live/stop` with `{ session_id }` **or** `{ key_id }`.
 
 Helper (exact; fully readable, never clipped):
 
 - Default / non-LIVE non-Error: `Idle until ready`
 - While LIVE: `Retransmitting live to X`
-- On Error with a nonempty `status.error` / start error string: show that API error string **as-is** (redact rtmp secrets only). Do not rewrite it.
+- On Error with a nonempty `status.error` / session `error` / start error string: show that API error string **as-is** (redact rtmp secrets only). Do not rewrite it.
 
-**Not on this beat:** RTMP URL, stream key, destination form, clip, download, schedule, OAuth, settings.
+**Not on this beat:** RTMP URL field, stream key field, destination form, clip, download, schedule, OAuth, settings. Sessions list shows **names only**, never keys.
 
-After Start, `GET /api/live/status` drives the pill (`starting` → Starting, then `live` → LIVE) except Error, which sticks until Stop. Poll fail stays the current pill (Idle on fresh load). Never invent Error from a poll fail.
+After Start, `GET /api/live/status` (`sessions[]`) drives per-session pills (`starting` → Starting, then `live` → LIVE) except Error, which sticks until Stop. Poll fail stays the current pill (Idle on fresh load). Never invent Error from a poll fail.
 
 ## Live API (Frontend contract)
 
-Localhost only. Vite may still proxy `/api` → `http://127.0.0.1:8788` for Frontend work; operators open 8788. Never `0.0.0.0`. No `/api/clip` route. No clip UI.
+Operator path is **one Docker compose** → `http://127.0.0.1:8788` (same origin UI + `/api`). Vite may still proxy `/api` → `http://127.0.0.1:8788` for Frontend work; operators open 8788. Never `0.0.0.0`. No `/api/clip` route. No clip UI. No `/api/live/credentials` chrome — Sign-in consumes `/api/live/keys`.
+
+These routes are the lock. Do not invent extra routes beyond keys list/add/delete + start/stop/status/preview.
 
 | Method | Path | Body / response |
 | --- | --- | --- |
-| `PUT` | `/api/live/credentials` | `{ "rtmp_url":"…", "rtmp_key":"…" }` → `200` success. Never echo secrets. |
-| `GET` | `/api/live/credentials` | `200 { "configured": true \| false }` **only**. Never echo `rtmp_url` or `rtmp_key`. |
+| `GET` | `/api/live/keys` | List named keys. `200` with `keys[]` of `{ id, name }` plus `in_use` if `status.sessions[]` does not already say so. **Never** echo `rtmp_key`, `rtmp_url`, or the key value. Empty `keys` = not configured (Beat 1). |
+| `PUT` | `/api/live/keys` | Add/update a named key. Body: stream key + optional `name` + optional `rtmp_url` override. Omit `rtmp_url` to use default ingest `rtmps://va.pscp.tv:443/x`. `200` success (id + name only). **Never** echo the key. |
+| `DELETE` | `/api/live/keys/<id>` | Remove a named key. `200` success. **Never** echo secrets. |
 | `GET` | `/api/live/preview` | Query `source_url`. `200 { "ok": true, "source_url": "…", "title": "…", "is_live": true \| false }`. Title from yt-dlp `-J` `title` (may be `""` if unknown). `is_live` true when `live_status` is `is_live` or JSON `is_live` is true. Confirmed `not_live` / `was_live` stay `200` + title + `is_live:false`. YouTube first. `400 { "ok": false, "error": "…" }` missing/invalid URL. `502 { "ok": false, "error": "…" }` when yt-dlp fails (not `200` empty/false). Drop-link chrome for that 502: Beat 2 Preview (hide card; `error` as-is; Continue disabled; pill stays Idle — not Transport Error). No ffmpeg / restream. Never `rtmp_url` / `rtmp_key` / `destination`. |
-| `POST` | `/api/live/start` | `{ "source_url":"…" }` **only** → `200 { "ok": true, "state": "starting" }` (process up → later status `live`). `400` missing/invalid / not a live stream. `409` already running. |
-| `POST` | `/api/live/stop` | existing live API — `200 { "ok": true, "state": "stopped" }` (also `200`/`ok` if already idle) |
+| `POST` | `/api/live/start` | `{ "source_url":"…", "key_id":"…" }` **only** → `200 { "ok": true, "state": "starting" }` (process up → later status `live`). Never `rtmp_url` / `rtmp_key`. `400` missing/invalid / not a live stream. `409` key already in a live/starting session. |
+| `POST` | `/api/live/stop` | `{ "session_id":"…" }` **or** `{ "key_id":"…" }` → `200 { "ok": true, "state": "stopped" }` (also `200`/`ok` if that session already idle) |
 | `GET` | `/api/live/preview` | Query `source_url`. `127.0.0.1:8788`. Response `{ "ok", "source_url", "title", "is_live" }` **only**. No `rtmp_url` / `rtmp_key`. Never echo secrets. **LIVE** badge iff `is_live === true` on 200 ok. Show real `title` (not a synthetic `YouTube source <id>` placeholder). Same-route **502** `{ ok: false, error }` chrome: Beat 2 Preview (hide card; no LIVE badge; `error` as-is; Continue disabled; pill stays Idle). |
-| `GET` | `/api/live/status` | existing live API — `200 { "ok": true, "state": "idle"\|"starting"\|"live"\|"error"\|"stopped", "source_url": "…" or null, "error": null or string }` |
+| `GET` | `/api/live/status` | `200` includes `sessions[]` (concurrent restreams): `{ session_id, key_id, name, source_url, state, error }` — names only, never keys. `state` is `idle`\|`starting`\|`live`\|`error`\|`stopped`. Pill / Error-stick apply **per session** where chrome shows them. Never echo `rtmp_key` or `rtmp_url`. |
 
-Responses **never** echo `rtmp_key` or `rtmp_url`. Redact those substrings in any error string shown in the UI.
+Responses **never** echo `rtmp_key` or `rtmp_url` (or the key value). Redact those substrings in any error string shown in the UI. `GET` never returns `rtmp_key` / `rtmp_url`.
 
-`POST /api/live/start` does **not** accept destination fields in the operator UI. Destination is the saved credentials.
+`POST /api/live/start` does **not** accept raw destination fields. Destination is the selected named `key_id`.
 
-Keep stop/status as the existing live API. Consume `GET /api/live/preview` for `title` + `is_live`. Status poll fail stays Idle (Error chrome locks above). Error sticks until Stop.
+Consume `GET /api/live/preview` for `title` + `is_live`. Status poll fail stays Idle (Error chrome locks above). Error sticks until Stop.
 
 ## Tokens
 
@@ -233,8 +251,8 @@ Reuse [layout-v1.md](layout-v1.md) `:root` tokens:
 
 ## Out of primary
 
-No settings pages. No multi-dest. No clip-post. No clip download. No schedule. No OAuth screens. No Media Studio maze beyond the Beat 1 `?` disclosure (same-beat inline help; default helper stays the one short line). No five-block 720px chrome.
+No settings pages. No clip-post. No clip download. No schedule. No OAuth screens. No showing keys after save. No `/api/live/credentials` chrome. No Media Studio maze beyond the Beat 1 `?` disclosure (same-beat inline help; default helper stays the one short line). No five-block 720px chrome. No Vite `5173` operator path. No second published port.
 
 ## Done when
 
-Frontend can ship the three beats against this file without inventing chrome, OAuth, or clip UI. Beat 1 `?` help is the only Media Studio walkthrough — same beat, not a new page.
+Frontend can ship the three beats against this file without inventing chrome, OAuth, or clip UI. Beat 1 is keys-only Sign in (default ingest, Advanced off, named key list, clickable `?`). Beat 3 is concurrent `sessions[]` (one named key each). Operator form factor is one Docker compose on `http://127.0.0.1:8788`.
