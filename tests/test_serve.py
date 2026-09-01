@@ -12,6 +12,7 @@ from retrans.outputs.x import RestreamError
 from retrans.serve import (
     BindRefused,
     LiveController,
+    _cors_origin,
     ensure_loopback_bind,
     make_handler,
     normalize_bind_host,
@@ -263,3 +264,42 @@ def test_no_clip_route(api_factory):
     assert data["ok"] is False
     status, _, _ = _req(port, "GET", "/api/clip")
     assert status == 404
+
+
+class _OriginHandler:
+    def __init__(self, origin: str):
+        self.headers = {"Origin": origin}
+
+
+def test_cors_origin_allows_loopback_http_with_port():
+    assert _cors_origin(_OriginHandler("http://127.0.0.1:8788")) == "http://127.0.0.1:8788"
+    assert _cors_origin(_OriginHandler("http://localhost:5173")) == "http://localhost:5173"
+
+
+def test_cors_origin_rejects_lookalike_host():
+    assert _cors_origin(_OriginHandler("http://127.0.0.1.evil.com")) is None
+
+
+@pytest.mark.parametrize(
+    "origin",
+    ["", "*", "https://127.0.0.1", "https://localhost", "file://127.0.0.1", "http://"],
+)
+def test_cors_origin_rejects_non_loopback_http(origin: str):
+    assert _cors_origin(_OriginHandler(origin)) is None
+
+
+def _acao(port: int, origin: str) -> str | None:
+    conn = HTTPConnection(LOOPBACK_HOST, port, timeout=5)
+    conn.request("GET", "/api/live/status", headers={"Origin": origin})
+    resp = conn.getresponse()
+    resp.read()
+    value = resp.getheader("Access-Control-Allow-Origin")
+    conn.close()
+    return value
+
+
+def test_status_acao_reflects_only_exact_loopback_origin(api_factory):
+    port = api_factory(LiveController(restream_factory=ImmediateLive))
+    assert _acao(port, "http://127.0.0.1:8788") == "http://127.0.0.1:8788"
+    assert _acao(port, "http://localhost:5173") == "http://localhost:5173"
+    assert _acao(port, "http://127.0.0.1.evil.com") is None

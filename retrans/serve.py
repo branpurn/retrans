@@ -199,10 +199,16 @@ def validate_start_payload(payload: Any) -> tuple[str, str, str] | str:
 
 
 def _cors_origin(handler: BaseHTTPRequestHandler) -> str | None:
+    """Allow only http://127.0.0.1 or http://localhost (optional port)."""
     origin = handler.headers.get("Origin", "")
-    if origin.startswith("http://127.0.0.1") or origin.startswith("http://localhost"):
-        return origin
-    return None
+    if not origin:
+        return None
+    parsed = urlparse(origin)
+    if parsed.scheme != "http":
+        return None
+    if parsed.hostname not in {"127.0.0.1", "localhost"}:
+        return None
+    return origin
 
 
 def make_handler(controller: LiveController) -> type[BaseHTTPRequestHandler]:
