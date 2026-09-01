@@ -16,7 +16,7 @@ Layout: [design/layout-v1.md](design/layout-v1.md)
 
 There is **no public X API** to create a live broadcast or mint an RTMP key. Sending RTMP alone is **not** enough — the operator must create a source, create a broadcast, and click **Go Live** in Media Studio ([Restream](https://restream.io/learn/platforms/how-to-find-x-stream-key/), [Castr](https://docs.castr.com/en/articles/5119218-how-to-stream-live-video-to-x-formerly-twitter-using-castr), [vMix](https://www.vmix.com/knowledgebase/article.aspx/373/stream-to-x-using-custom-rtmp)).
 
-Operator dependencies: **ffmpeg** and **yt-dlp** (streamlink optional fallback). Infra owns the image; this repo does not add a Dockerfile.
+Operator dependencies: **ffmpeg** and **yt-dlp** (streamlink optional fallback). Operator-run image: `docker compose up --build` (ffmpeg + yt-dlp + streamlink). Secrets via `.env` / env vars only (copy `.env.example`; never commit `.env`).
 
 ## Permission / fair use
 

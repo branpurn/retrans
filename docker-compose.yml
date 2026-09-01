@@ -1,0 +1,12 @@
+# Operator-run live worker. Outbound RTMP(S) only — no host port published.
+# Wave 1 is a long-running live pipeline, not a clip-only batch job.
+# X credentials stay in .env (gitignored). Copy .env.example → .env.
+services:
+  retrans:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 15s
