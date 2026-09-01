@@ -83,6 +83,18 @@ describe("primary-flow chrome lock", () => {
     assert.doesNotMatch(main, /YouTube live/);
   });
 
+  it("consumes primary-flow 502 chrome: helper as-is, hide card, Idle pill", () => {
+    const design = readFileSync(new URL("../design/primary-flow.md", import.meta.url), "utf8");
+    assert.match(design, /502.*ok:\s*false.*error/s);
+    assert.match(design, /Error helper/);
+    assert.match(design, /as-is/);
+    assert.match(main, /previewPaint/);
+    assert.match(main, /isPreviewProbeFail/);
+    assert.match(main, /Never Error pill/);
+    assert.doesNotMatch(main, /error\s*=\s*["']status failed["']/);
+    assert.doesNotMatch(main, /state\.backend\s*=\s*["']error["'].*preview/s);
+  });
+
   it("Start sends source_url only; no clip UI; Vite loopback 8788", () => {
     assert.match(main, /retransApi\.start\(\s*\{\s*source_url:\s*readField\(els\.source\)\.trim\(\)\s*,?\s*\}\s*\)/);
     assert.doesNotMatch(main, /\/api\/clip/);
