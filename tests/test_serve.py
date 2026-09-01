@@ -920,3 +920,61 @@ def test_start_after_error_is_not_409(api_factory):
     assert data["state"] in {"starting", "live"}
     assert data.get("ok") is True
     _assert_no_rtmp_secrets(data, raw)
+
+
+def test_output_open_io_error_retry_and_stop_same_serve():
+    """ffmpeg output-open I/O → status.error; start/stop retry without serve restart."""
+    created: list[HTTPServer] = []
+
+    class CountingHTTPServer(HTTPServer):
+        def __init__(self, *args, **kwargs):
+            created.append(self)
+            super().__init__(*args, **kwargs)
+
+    holder, popen = _popen_holder()
+    controller = _live_controller_with_popen(popen)
+    httpd = CountingHTTPServer(
+        (LOOPBACK_HOST, 0),
+        make_handler(controller, resolver=_live_resolver()),
+    )
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    port = httpd.server_address[1]
+    try:
+        assert len(created) == 1
+        code, data, raw = _req(port, "POST", "/api/live/start", START_BODY)
+        assert code == 200
+        live, _ = _wait_status(port, "live")
+        assert live["state"] == "live"
+        first = holder["proc"]
+        first.die(1, stderr="Error opening output files: Input/output error")
+
+        status, raw = _wait_status(port, "error")
+        assert status["state"] == "error"
+        assert status["error"]
+        assert "Input/output error" in status["error"]
+        assert "ffmpeg restream exited" in status["error"]
+        _assert_no_rtmp_secrets(status, raw)
+
+        code, data, raw = _req(port, "POST", "/api/live/start", START_BODY)
+        assert code == 200
+        assert data["state"] in {"starting", "live"}
+        _assert_no_rtmp_secrets(data, raw)
+        recovered, rec_raw = _wait_status(port, "live")
+        assert recovered["state"] == "live"
+        assert recovered["error"] is None
+        _assert_no_rtmp_secrets(recovered, rec_raw)
+        assert holder["proc"] is not first
+        assert len(created) == 1
+
+        st, stop_data, stop_raw = _req(port, "POST", "/api/live/stop")
+        assert st == 200
+        assert stop_data == {"ok": True, "state": "stopped"}
+        _assert_no_rtmp_secrets(stop_data, stop_raw)
+        _, stopped, stopped_raw = _req(port, "GET", "/api/live/status")
+        assert stopped["state"] == "stopped"
+        _assert_no_rtmp_secrets(stopped, stopped_raw)
+        assert len(created) == 1
+    finally:
+        httpd.shutdown()
+        httpd.server_close()

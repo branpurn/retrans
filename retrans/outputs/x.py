@@ -40,15 +40,19 @@ def join_rtmp_destination(rtmp_url: str, rtmp_key: str) -> str:
 
     Typical Media Studio values look like rtmps://…/x plus a separate key.
     The key is appended as a path segment when it is not already present.
+    RTMP publish needs app + playpath (two path segments). A bare /x app
+    with an empty playpath makes ffmpeg fail output-open with EIO.
     """
     url = rtmp_url.strip()
     key = rtmp_key.strip()
     if not url or not key:
         raise RestreamError("rtmp url and key are required")
-    scheme = urlparse(url).scheme.lower()
+    parsed = urlparse(url)
+    scheme = parsed.scheme.lower()
     if scheme not in {"rtmp", "rtmps"}:
         raise RestreamError("rtmp url must start with rtmp:// or rtmps://")
-    if url.rstrip("/").endswith(key) or url.endswith("/" + key):
+    segments = [part for part in (parsed.path or "").split("/") if part]
+    if len(segments) >= 2 and segments[-1] == key:
         return url
     if url.endswith("/"):
         return url + key
@@ -91,10 +95,34 @@ def build_ffmpeg_restream_cmd(stream_url: str, destination: str) -> list[str]:
         "2",
         "-b:a",
         "128k",
+        # Live RTMPS cannot seek; skip FLV duration/filesize header rewrite.
+        "-flvflags",
+        "no_duration_filesize",
         "-f",
         "flv",
         destination,
     ]
+
+
+_OUTPUT_OPEN_IO = "error opening output files: input/output error"
+
+
+def is_output_open_io_error(message: str) -> bool:
+    """True when ffmpeg failed to open the RTMP sink (EIO), not a mid-stream drop."""
+    return _OUTPUT_OPEN_IO in (message or "").lower()
+
+
+def format_ffmpeg_exit_error(last_stderr: str) -> str:
+    """Operator-visible ffmpeg death. Secrets must already be redacted in last_stderr."""
+    last = (last_stderr or "").strip()
+    if not last:
+        return "ffmpeg restream exited"
+    if is_output_open_io_error(last):
+        return (
+            "ffmpeg restream exited: Error opening output files: Input/output error "
+            "(RTMP output could not be opened)"
+        )
+    return f"ffmpeg restream exited: {last}"
 
 
 class XLiveRestream:
@@ -175,9 +203,19 @@ class XLiveRestream:
         if self._proc.poll() is not None:
             self._join_stderr_reader(timeout=1.0)
             err = self.last_stderr_line()
+            if is_output_open_io_error(err):
+                raise RestreamError(
+                    redact(
+                        "ffmpeg restream exited: Error opening output files: "
+                        "Input/output error (RTMP output could not be opened)",
+                        rtmp_url,
+                        rtmp_key,
+                        dest,
+                    )
+                )
             raise RestreamError(
                 redact(
-                    f"ffmpeg exited immediately: {err}",
+                    f"ffmpeg exited immediately: {err or 'no stderr'}",
                     rtmp_url,
                     rtmp_key,
                     dest,
@@ -224,10 +262,7 @@ class XLiveRestream:
 
     def ffmpeg_exit_error(self) -> str:
         """Operator-visible reason after an unexpected ffmpeg exit. Secrets redacted."""
-        last = self.last_stderr_line()
-        if last:
-            return f"ffmpeg restream exited: {last}"
-        return "ffmpeg restream exited"
+        return format_ffmpeg_exit_error(self.last_stderr_line())
 
     def poll(self) -> int | None:
         """ffmpeg poll(); None if not spawned or still running."""

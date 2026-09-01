@@ -14,6 +14,7 @@ from retrans.outputs.x import (
     XLiveRestream,
     build_ffmpeg_restream_cmd,
     debug_chunked_upload_and_post,
+    format_ffmpeg_exit_error,
     join_rtmp_destination,
 )
 
@@ -21,6 +22,14 @@ from retrans.outputs.x import (
 def test_join_rtmp_appends_key():
     dest = join_rtmp_destination("rtmps://va.pscp.tv:443/x", "secret-key")
     assert dest == "rtmps://va.pscp.tv:443/x/secret-key"
+
+
+def test_join_rtmp_key_x_is_playpath_not_app():
+    """Default ingest app is /x. Key 'x' must still be a second path segment."""
+    dest = join_rtmp_destination("rtmps://va.pscp.tv:443/x", "x")
+    assert dest == "rtmps://va.pscp.tv:443/x/x"
+    already = join_rtmp_destination("rtmps://va.pscp.tv:443/x/secret-key", "secret-key")
+    assert already == "rtmps://va.pscp.tv:443/x/secret-key"
 
 
 def test_join_rtmp_rejects_non_rtmp():
@@ -38,6 +47,8 @@ def test_ffmpeg_cmd_is_h264_aac_flv_not_hevc():
     assert "-r" in cmd and cmd[cmd.index("-r") + 1] == "30"
     assert "-b:v" in cmd and cmd[cmd.index("-b:v") + 1] == "9M"
     assert "-b:a" in cmd and cmd[cmd.index("-b:a") + 1] == "128k"
+    assert "-flvflags" in cmd
+    assert cmd[cmd.index("-flvflags") + 1] == "no_duration_filesize"
     vf = cmd[cmd.index("-vf") + 1]
     assert "1920:1080" in vf
     assert "force_original_aspect_ratio=decrease" in vf
@@ -45,6 +56,7 @@ def test_ffmpeg_cmd_is_h264_aac_flv_not_hevc():
     joined = " ".join(cmd)
     assert "hevc" not in joined.lower()
     assert "libx265" not in joined
+    assert "tee" not in joined.split()
     assert dest in cmd
 
 
@@ -156,6 +168,37 @@ def test_restream_start_spawns_ffmpeg_after_resolve():
             "rtmps://va.pscp.tv:443/x",
             "secret-key",
         )
+
+
+def test_restream_start_output_open_io_is_restream_error():
+    class Resolver:
+        def resolve(self, page_url: str) -> str:
+            return "https://cdn.example/live.m3u8"
+
+    class Dead:
+        def __init__(self):
+            self.stderr = io.StringIO(
+                "Error opening output file rtmps://va.pscp.tv:443/x/secret-key.\n"
+                "Error opening output files: Input/output error\n"
+            )
+
+        def poll(self):
+            return 1
+
+    job = XLiveRestream(resolver=Resolver(), popen=lambda *_a, **_k: Dead())
+    with pytest.raises(RestreamError) as exc:
+        job.start("https://youtu.be/a", "rtmps://va.pscp.tv:443/x", "secret-key")
+    text = str(exc.value)
+    assert "secret-key" not in text
+    assert "Input/output error" in text
+    assert "RTMP output could not be opened" in text
+
+
+def test_format_ffmpeg_exit_error_output_open_io():
+    msg = format_ffmpeg_exit_error("Error opening output files: Input/output error")
+    assert "ffmpeg restream exited" in msg
+    assert "Input/output error" in msg
+    assert "RTMP output could not be opened" in msg
 
 
 def test_restream_start_redacts_key_on_immediate_exit():
