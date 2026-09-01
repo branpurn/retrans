@@ -23,27 +23,22 @@ Wave 1 path: **live source URL → continuous live restream** to the operator’
 
 There is **no public X API** to create a live broadcast or mint an RTMP key. Sending RTMP alone is **not** enough — the operator must create a source, create a broadcast, and click **Go Live** in Media Studio ([Restream](https://restream.io/learn/platforms/how-to-find-x-stream-key/), [Castr](https://docs.castr.com/en/articles/5119218-how-to-stream-live-video-to-x-formerly-twitter-using-castr), [vMix](https://www.vmix.com/knowledgebase/article.aspx/373/stream-to-x-using-custom-rtmp)).
 
-Operator dependencies: **ffmpeg** and **yt-dlp** (streamlink optional fallback). Operator-run live worker: `docker compose --profile live up --build` (ffmpeg + yt-dlp + streamlink; needs `.env`). Secrets via `.env` / env vars only (copy `.env.example`; never commit `.env`).
+Operator image: **`ghcr.io/branpurn/retrans`** (Vite `dist/` + ffmpeg + yt-dlp + streamlink + `retrans serve`). Secrets via `.env` / env vars only (copy `.env.example`; never commit `.env`).
 
-## Operator loopback (one command)
+## Operator (GHCR + one compose)
 
-**Operator URL:** `http://127.0.0.1:8788` **only** (same origin serves UI + `/api`). Never `0.0.0.0` / LAN / hotspot. Vite `5173` is not the operator path (`npm run dev` may still proxy `/api` → 8788; operators open 8788).
-
-Linux + Docker (host network so `retrans serve` can bind `127.0.0.1:8788` on the host; publishing `8788:8788` is forbidden because that would require listen `0.0.0.0` inside the container):
+Pull a tagged image and run one compose. **Operator URL:** `http://127.0.0.1:8788` **only**.
 
 ```bash
-docker compose --profile loopback up --build
+docker pull ghcr.io/branpurn/retrans:<tag>
+RETRANS_IMAGE_TAG=<tag> docker compose --profile loopback up
 ```
 
-Without Docker (`pip install -e .` and `npm install` / `npm run build` first):
+Open http://127.0.0.1:8788. Same origin serves UI + `/api`. Never `0.0.0.0` / LAN / hotspot. No published `8788:8788`. Vite `5173` is not the operator path.
 
-```bash
-./scripts/loopback.sh
-```
+Linux host network so `retrans serve` can bind `127.0.0.1:8788` on the host. Publishing `8788:8788` is forbidden (that would require listen `0.0.0.0` inside the container).
 
-CI checks that `HOST=0.0.0.0 ./scripts/loopback.sh` is refused (non-zero; no bind). Both paths fail-hard if `retrans serve` is not listening on `127.0.0.1:8788`.
-
-Open http://127.0.0.1:8788. The loopback profile does not start the live ffmpeg worker. Live worker is `docker compose --profile live up --build` and needs `.env` (no host port).
+Loopback is one service and does not start the live ffmpeg worker. Live workers (`docker compose --profile live up`) stay idle without keys; concurrent keyed workers are allowed. Tagged images come from GitHub Releases (or `workflow_dispatch`).
 
 ## Sign in → Drop link → Retrans (loopback, 127.0.0.1 only)
 
@@ -53,12 +48,12 @@ Operator run path on loopback `127.0.0.1` only — never `0.0.0.0` / LAN / hotsp
 2. **Drop link:** paste/drop a live YouTube (or other live) page URL. Not a VOD/clip file.
 3. **Retrans:** fair-use ack, then Start LIVE. Still Create Broadcast + Go Live in Media Studio.
 
-How to run that path locally:
+How to run that path:
 
-- `docker compose --profile loopback up --build` (Linux host network) OR `./scripts/loopback.sh`
+- `docker pull ghcr.io/branpurn/retrans:<tag>` then `RETRANS_IMAGE_TAG=<tag> docker compose --profile loopback up`
 - Open http://127.0.0.1:8788 — never `0.0.0.0`
-- Control API is same-origin `/api/...` on 8788 (no Vite proxy required for operator-run)
-- Vite `5173` is not the operator path (`npm run dev` only; proxies `/api` → 8788)
+- Control API is same-origin `/api/...` on 8788
+- Vite `5173` is not the operator path
 
 ## Permission / fair use
 
@@ -80,6 +75,8 @@ export RETRANS_X_RTMP_KEY='…'
 ```
 
 ## Install
+
+Developer checkout (not the operator path — operators pull GHCR and compose):
 
 ```bash
 pip install -e .
@@ -124,7 +121,7 @@ Responses **never** echo `rtmp_key` or `rtmp_url`. If ffmpeg exits unexpectedly 
 
 ## Operator UI (this PR)
 
-Product string **RETRANS**. Code, files, and package: `retrans`. Chrome matches [design/layout-v1.md](design/layout-v1.md).
+Product string **RETRANS**. Code, files, and package: `retrans`. Chrome matches [design/layout-v1.md](design/layout-v1.md). Operators run GHCR + compose (above), not this host npm path.
 
 ```bash
 npm install
