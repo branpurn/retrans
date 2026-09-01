@@ -37,6 +37,7 @@ import {
   stickSessions,
   unusedKeys,
 } from "./keysFlow.js";
+import { NAMED_TEE, OUTBOUND_LABEL, attachPlayer, playerShouldAttach } from "./player.js";
 
 const els = {
   beat1: document.getElementById("beat-1"),
@@ -66,6 +67,8 @@ const els = {
   changeDest: document.getElementById("change-dest"),
   dropAnother: document.getElementById("drop-another"),
   sessionList: document.getElementById("session-list"),
+  outbound: document.getElementById("outbound"),
+  player: document.getElementById("outbound-player"),
   startBtn: document.getElementById("start-btn"),
   stopBtn: document.getElementById("stop-btn"),
   helper: document.getElementById("transport-helper"),
@@ -333,6 +336,22 @@ function renderSessions() {
     stop.disabled = !canStop({ state: sess.state });
     stop.addEventListener("click", () => onStopSession(sess));
     li.append(source, name, pill, stop);
+    if (playerShouldAttach({ backend: sess.state })) {
+      const wrap = document.createElement("div");
+      wrap.className = "outbound";
+      const label = document.createElement("p");
+      label.className = "outbound-label";
+      label.textContent = OUTBOUND_LABEL;
+      const video = document.createElement("video");
+      video.className = "outbound-player";
+      video.controls = true;
+      video.playsInline = true;
+      video.preload = "none";
+      video.setAttribute("aria-label", OUTBOUND_LABEL);
+      attachPlayer(video, { attach: true, src: sess.outbound_url || NAMED_TEE });
+      wrap.append(label, video);
+      li.append(wrap);
+    }
     els.sessionList.append(li);
   }
 }
@@ -357,6 +376,13 @@ function render() {
   renderPlaylist();
   renderSessions();
   renderNowPlaying();
+  const rowLive = state.sessions.some((sess) => playerShouldAttach({ backend: sess.state }));
+  const attach = !rowLive && playerShouldAttach({ backend: state.backend, sessions: state.sessions });
+  els.outbound?.classList.toggle("hidden", !attach);
+  attachPlayer(els.player, {
+    attach,
+    src: activeSession()?.outbound_url || NAMED_TEE,
+  });
 
   els.helper.textContent = transportHelper({
     backend: state.backend,

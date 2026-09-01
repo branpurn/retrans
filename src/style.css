@@ -439,3 +439,25 @@ details[open] {
 #playlist-now {
   overflow-wrap: anywhere;
 }
+
+.outbound {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  flex: 1 0 100%;
+}
+
+.outbound-label {
+  margin: 0;
+  color: var(--muted);
+}
+
+.outbound-player {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}

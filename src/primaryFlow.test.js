@@ -88,6 +88,8 @@ describe("primary-flow chrome lock", () => {
     assert.match(html, /id="session-list"/);
     assert.match(html, /id="playlist-now"/);
     assert.match(html, /id="drop-another"/);
+    assert.match(html, /id="outbound-player"/);
+    assert.match(html, />Outbound</);
     assert.match(html, /Idle until ready/);
     assert.match(enablement, /Idle until ready/);
     assert.match(enablement, /Retransmitting live to X/);
@@ -101,6 +103,13 @@ describe("primary-flow chrome lock", () => {
     assert.match(main, /retransApi\.stop\(\{\s*session_id:/);
     assert.match(main, /playlistPos/);
     assert.match(main, /do not re-Select/);
+    assert.match(beat3, /<video\b[^>]*id="outbound-player"/);
+    assert.match(beat3, /<video\b[^>]*controls/);
+    assert.doesNotMatch(beat3, /\bmuted\b/);
+    assert.doesNotMatch(beat3, /<iframe\b/);
+    assert.doesNotMatch(html, /youtube\.com\/embed/);
+    assert.doesNotMatch(html, /YT\.Player/);
+    assert.match(main, /attachPlayer/);
   });
 
   it("does not paint parseSourceUrl as display before preview API", () => {

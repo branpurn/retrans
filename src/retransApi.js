@@ -58,6 +58,9 @@ function publicSession(raw = {}) {
   if (Number.isInteger(raw.source_index) && raw.source_index >= 0) {
     session.source_index = raw.source_index;
   }
+  if (typeof raw.outbound_url === "string" && raw.outbound_url) {
+    session.outbound_url = raw.outbound_url;
+  }
   return session;
 }
 
