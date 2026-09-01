@@ -656,3 +656,168 @@ def test_operator_stop_still_stopped_not_error(api_factory):
     assert status["state"] == "stopped"
     assert status["error"] is None
     _assert_no_rtmp_secrets(status, status_raw)
+
+
+def _live_controller_with_popen(popen):
+    return LiveController(
+        restream_factory=lambda: XLiveRestream(
+            resolver=_LivePageResolver(),
+            popen=popen,
+        )
+    )
+
+
+def test_start_after_ffmpeg_death_error_same_server():
+    """ffmpeg death → error → POST start again on the same HTTPServer is 200."""
+    created: list[HTTPServer] = []
+
+    class CountingHTTPServer(HTTPServer):
+        def __init__(self, *args, **kwargs):
+            created.append(self)
+            super().__init__(*args, **kwargs)
+
+    holder, popen = _popen_holder()
+    controller = _live_controller_with_popen(popen)
+    httpd = CountingHTTPServer(
+        (LOOPBACK_HOST, 0),
+        make_handler(controller, resolver=_live_resolver()),
+    )
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    port = httpd.server_address[1]
+    try:
+        assert len(created) == 1
+        only_server = created[0]
+
+        code, data, raw = _req(port, "POST", "/api/live/start", START_BODY)
+        assert code == 200
+        assert data["state"] == "starting"
+        _assert_no_rtmp_secrets(data, raw)
+
+        live, _ = _wait_status(port, "live")
+        assert live["state"] == "live"
+        first_proc: _ControllableProc = holder["proc"]
+        first_proc.die(
+            1,
+            stderr=f"Connection to {SECRET_URL}/{SECRET_KEY} failed: Broken pipe",
+        )
+
+        status, raw = _wait_status(port, "error")
+        assert status["state"] == "error"
+        assert status["error"]
+        old_error = status["error"]
+        _assert_no_rtmp_secrets(status, raw)
+
+        # Same serve process — restart must not construct a new HTTPServer.
+        code, data, raw = _req(port, "POST", "/api/live/start", START_BODY)
+        assert code == 200
+        assert data["state"] in {"starting", "live"}
+        assert data.get("error") is None
+        _assert_no_rtmp_secrets(data, raw)
+        assert len(created) == 1
+        assert created[0] is only_server
+
+        recovered, rec_raw = _wait_status(port, "live")
+        assert recovered["state"] == "live"
+        assert recovered["error"] is None
+        assert recovered["error"] != old_error
+        assert recovered["source_url"] == SOURCE
+        _assert_no_rtmp_secrets(recovered, rec_raw)
+        assert holder["proc"] is not first_proc
+        assert len(created) == 1
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_old_wait_thread_does_not_clobber_new_start(api_factory):
+    """Late wait() from a dead session must not overwrite a new start's state."""
+    holder, popen = _popen_holder()
+    port = api_factory(_live_controller_with_popen(popen))
+
+    _req(port, "POST", "/api/live/start", START_BODY)
+    live, _ = _wait_status(port, "live")
+    assert live["state"] == "live"
+    first_proc: _ControllableProc = holder["proc"]
+    first_proc.mark_dead(
+        1,
+        stderr=f"server rejected key {SECRET_KEY} at {SECRET_URL}",
+    )
+
+    status, raw = _wait_status(port, "error")
+    assert status["state"] == "error"
+    assert not first_proc._done.is_set()
+    _assert_no_rtmp_secrets(status, raw)
+
+    code, data, raw = _req(port, "POST", "/api/live/start", START_BODY)
+    assert code == 200
+    assert data["state"] in {"starting", "live"}
+    _assert_no_rtmp_secrets(data, raw)
+
+    second_live, _ = _wait_status(port, "live")
+    assert second_live["state"] == "live"
+    assert second_live["error"] is None
+
+    # Old wait() finishes after the new session is live.
+    first_proc._done.set()
+    threading.Event().wait(0.15)
+
+    _, after, after_raw = _req(port, "GET", "/api/live/status")
+    assert after["state"] == "live"
+    assert after["error"] is None
+    assert after["state"] != "error"
+    _assert_no_rtmp_secrets(after, after_raw)
+
+
+def test_start_recovers_from_stopped_and_idle_not_409(api_factory):
+    holder, popen = _popen_holder()
+    port = api_factory(_live_controller_with_popen(popen))
+
+    # idle → start is 200, not 409
+    code, data, raw = _req(port, "POST", "/api/live/start", START_BODY)
+    assert code == 200
+    assert data["state"] == "starting"
+    _assert_no_rtmp_secrets(data, raw)
+
+    live, _ = _wait_status(port, "live")
+    assert live["state"] == "live"
+
+    # live → start is 409
+    code, data, raw = _req(port, "POST", "/api/live/start", START_BODY)
+    assert code == 409
+    assert data["ok"] is False
+    assert data["error"] == "already running"
+    assert data["state"] == "live"
+    _assert_no_rtmp_secrets(data, raw)
+
+    _req(port, "POST", "/api/live/stop")
+    _, stopped, stopped_raw = _req(port, "GET", "/api/live/status")
+    assert stopped["state"] == "stopped"
+    assert stopped["error"] is None
+    _assert_no_rtmp_secrets(stopped, stopped_raw)
+
+    # stopped → start again is 200, not 409
+    code, data, raw = _req(port, "POST", "/api/live/start", START_BODY)
+    assert code == 200
+    assert data["state"] in {"starting", "live"}
+    _assert_no_rtmp_secrets(data, raw)
+    recovered, rec_raw = _wait_status(port, "live")
+    assert recovered["state"] == "live"
+    assert recovered["error"] is None
+    _assert_no_rtmp_secrets(recovered, rec_raw)
+
+
+def test_start_after_error_is_not_409(api_factory):
+    holder, popen = _popen_holder()
+    port = api_factory(_live_controller_with_popen(popen))
+    _req(port, "POST", "/api/live/start", START_BODY)
+    _wait_status(port, "live")
+    holder["proc"].die(1, stderr="Broken pipe")
+    status, _ = _wait_status(port, "error")
+    assert status["state"] == "error"
+
+    code, data, raw = _req(port, "POST", "/api/live/start", START_BODY)
+    assert code == 200
+    assert data["state"] in {"starting", "live"}
+    assert data.get("ok") is True
+    _assert_no_rtmp_secrets(data, raw)

@@ -100,10 +100,15 @@ class LiveController:
         self._error: str | None = None
         self._job: XLiveRestream | None = None
         self._thread: threading.Thread | None = None
+        self._generation = 0
 
     @property
     def busy(self) -> bool:
         return self._state in {"starting", "live"}
+
+    def _owns_session_locked(self, job: XLiveRestream, generation: int) -> bool:
+        """True only for the controller's current restream job/generation."""
+        return self._job is job and self._generation == generation
 
     def public_status(self) -> dict[str, Any]:
         with self._lock:
@@ -141,6 +146,10 @@ class LiveController:
             self._reconcile_dead_process_locked()
             if self.busy:
                 raise AlreadyRunning("already running")
+            # error / stopped / idle may start again on this same serve process.
+            # Bump generation so a leftover wait() thread cannot clobber us.
+            self._generation += 1
+            generation = self._generation
             self._state = "starting"
             self._source_url = source_url
             self._error = None
@@ -148,7 +157,7 @@ class LiveController:
             self._job = job
             thread = threading.Thread(
                 target=self._run,
-                args=(job, source_url, rtmp_url, rtmp_key),
+                args=(job, generation, source_url, rtmp_url, rtmp_key),
                 name="retrans-live",
                 daemon=True,
             )
@@ -168,6 +177,7 @@ class LiveController:
     def _run(
         self,
         job: XLiveRestream,
+        generation: int,
         source_url: str,
         rtmp_url: str,
         rtmp_key: str,
@@ -176,13 +186,22 @@ class LiveController:
         try:
             dest = join_rtmp_destination(rtmp_url, rtmp_key)
             job.start(source_url, rtmp_url, rtmp_key)
+            stop_self = False
             with self._lock:
-                if self._state == "stopped":
-                    job.stop()
-                    return
-                self._state = "live"
+                if not self._owns_session_locked(job, generation):
+                    # Superseded by a newer start(); do not touch controller state.
+                    stop_self = True
+                elif self._state == "stopped":
+                    stop_self = True
+                else:
+                    self._state = "live"
+            if stop_self:
+                job.stop()
+                return
             job.wait()
             with self._lock:
+                if not self._owns_session_locked(job, generation):
+                    return
                 if self._state == "stopped":
                     return
                 # Unexpected exit — including zero — is an error. A dead
@@ -196,6 +215,8 @@ class LiveController:
                         self._error = "ffmpeg restream exited"
         except Exception as exc:  # noqa: BLE001
             with self._lock:
+                if not self._owns_session_locked(job, generation):
+                    return
                 if self._state == "stopped":
                     return
                 self._state = "error"
