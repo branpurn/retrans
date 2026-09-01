@@ -84,12 +84,16 @@ function applyPreview(parsed) {
     const host = card.querySelector(".preview-host");
     const badge = card.querySelector(".preview-live-badge");
     const thumb = card.querySelector(".preview-thumb");
-    title.textContent = parsed.title;
-    host.textContent = parsed.host;
-    badge.classList.toggle("hidden", !parsed.isLive);
+    const displayTitle =
+      typeof parsed.title === "string" && parsed.title.trim()
+        ? parsed.title.trim()
+        : "";
+    title.textContent = displayTitle;
+    host.textContent = parsed.host || "";
+    badge.classList.toggle("hidden", parsed.isLive !== true);
     if (parsed.thumbnail) {
       thumb.src = parsed.thumbnail;
-      thumb.alt = parsed.title;
+      thumb.alt = displayTitle;
       thumb.hidden = false;
     } else {
       thumb.removeAttribute("src");
@@ -142,8 +146,8 @@ async function runPreview() {
     if (result.ok) {
       applyPreview({
         ...parsed,
-        title: result.title,
-        isLive: Boolean(result.is_live),
+        title: typeof result.title === "string" ? result.title : "",
+        isLive: result.is_live === true,
       });
     } else {
       applyPreview({ ok: false, reason: result.error || "invalid" });
@@ -178,7 +182,6 @@ function applyBackend(result) {
   state.error = typeof result.error === "string" ? result.error : "";
   if (result.source_url && !state.previewOk) {
     els.source.value = result.source_url;
-    applyPreview(parseSourceUrl(result.source_url));
     runPreview();
   }
   if (state.backend === "starting" || state.backend === "live") startPolling();
