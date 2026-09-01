@@ -67,9 +67,17 @@ jobs:
         run: |
           test "$(docker compose --profile loopback config --services | wc -l)" -eq 1
           docker compose --profile loopback config | grep -F 'ghcr.io/branpurn/retrans'
-          docker compose --profile loopback config | grep -F 'network_mode: host'
-          docker compose --profile loopback config | grep -F '127.0.0.1'
-          ! docker compose --profile loopback config | grep -E '5173|8788:8788|0\.0\.0\.0'
+          docker compose --profile loopback config | grep -F 'host_ip: 127.0.0.1'
+          docker compose --profile loopback config | grep -F 'published: "8788"'
+          docker compose --profile loopback config | grep -F 'target: 8788'
+          docker compose --profile loopback config | grep -F 'init: true'
+          ! docker compose --profile loopback config | grep -F '5173'
+          ! docker compose --profile loopback config | grep -F 'network_mode: host'
+          ! docker compose --profile loopback config | grep -F '0.0.0.0:8788'
+          grep -F '127.0.0.1:8788:8788' docker-compose.yml
+          grep -F 'HOST: "0.0.0.0"' docker-compose.yml
+          ! grep -F 'network_mode: host' docker-compose.yml
+          ! grep -E '^[[:space:]]*-[[:space:]]*"?0\.0\.0\.0:8788' docker-compose.yml
 
       - name: Log in to GHCR
         run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
@@ -190,11 +198,12 @@ jobs:
             echo "Operator image: \`${IMAGE}:${TAG}\`"
             echo
             echo '```bash'
+            echo "docker rm -f retrans"
             echo "docker pull ${IMAGE}:${TAG}"
-            echo "RETRANS_IMAGE_TAG=${TAG} docker compose --profile loopback up"
+            echo "docker run --rm --init -p 127.0.0.1:8788:8788 ${IMAGE}:${TAG} retrans serve"
             echo '```'
             echo
-            echo "Operator URL: http://127.0.0.1:8788 only. Host network. Never 0.0.0.0. No published 8788:8788. Not Vite 5173."
+            echo "Operator URL: http://127.0.0.1:8788 only. Published 127.0.0.1:8788:8788. Never 0.0.0.0:8788 on the host. Not host network. Not Vite 5173."
             echo "Loopback is one service and does not start the live worker."
           } > "$notes"
           if gh release view "$TAG" >/dev/null 2>&1; then

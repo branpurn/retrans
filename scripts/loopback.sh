@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
-# Operator loopback: retrans serve on 127.0.0.1:8788 (dist/ + /api, same-origin).
-# Never binds 0.0.0.0 / LAN / hotspot. No Vite operator. No prompts. Fail-hard.
-# Cleans up child processes on exit.
+# Native-host operator loopback: retrans serve on 127.0.0.1:8788 (dist/ + /api).
+# Never binds 0.0.0.0 / LAN / hotspot on the host. No Vite operator. No prompts.
+# Fail-hard. Cleans up child processes on exit.
+#
+# Docker operator path (rootless + Docker Desktop) is NOT this script and is
+# NOT --network host. Host publish is 127.0.0.1:8788:8788 only:
+#   docker rm -f retrans
+#   docker pull ghcr.io/branpurn/retrans:latest
+#   docker run --rm --init -p 127.0.0.1:8788:8788 IMAGE retrans serve
+# Compose loopback uses the same publish mapping + HOST=0.0.0.0 in-container.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

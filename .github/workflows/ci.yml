@@ -28,13 +28,29 @@ jobs:
       - name: Compose loopback profile
         run: |
           docker compose --profile loopback config
-          # ONE service — GHCR image, no Vite ui / 5173, no published 8788:8788
+          # ONE service — GHCR image, published 127.0.0.1:8788:8788
+          # Not host net. Host never 0.0.0.0:8788. No Vite 5173.
           test "$(docker compose --profile loopback config --services | wc -l)" -eq 1
           ! docker compose --profile loopback config --services | grep -qx ui
-          ! docker compose --profile loopback config | grep -E '5173|8788:8788|0\.0\.0\.0'
+          ! docker compose --profile loopback config | grep -F '5173'
+          ! docker compose --profile loopback config | grep -F 'network_mode: host'
+          ! docker compose --profile loopback config | grep -F '0.0.0.0:8788'
           docker compose --profile loopback config | grep -F 'ghcr.io/branpurn/retrans'
-          docker compose --profile loopback config | grep -F 'network_mode: host'
-          docker compose --profile loopback config | grep -F '127.0.0.1'
+          docker compose --profile loopback config | grep -F 'host_ip: 127.0.0.1'
+          docker compose --profile loopback config | grep -F 'published: "8788"'
+          docker compose --profile loopback config | grep -F 'target: 8788'
+          docker compose --profile loopback config | grep -F 'init: true'
+          grep -F '127.0.0.1:8788:8788' docker-compose.yml
+          grep -F 'HOST: "0.0.0.0"' docker-compose.yml
+          ! grep -F 'network_mode: host' docker-compose.yml
+          ! grep -E '^[[:space:]]*-[[:space:]]*"?0\.0\.0\.0:8788' docker-compose.yml
+          grep -F 'docker run --rm --init -p 127.0.0.1:8788:8788' README.md
+          grep -F 'docker run --rm --init -p 127.0.0.1:8788:8788' docker-compose.yml
+          ! grep -E 'docker run .*--network[[:space:]]+host' README.md docker-compose.yml
+          grep -F 'docker run --rm --init -p 127.0.0.1:8788:8788' .github/workflows/release.yml
+          ! grep -F 'network_mode: host' .github/workflows/release.yml
+          grep -F 'HOST="${HOST:-0.0.0.0}"' docker-entrypoint.sh
+          grep -F 'docker run --rm --init -p 127.0.0.1:8788:8788' docker-entrypoint.sh
       - name: Release workflow publishes GHCR (no PR push, no extra secrets)
         run: |
           test -f .github/workflows/release.yml
@@ -111,3 +127,5 @@ jobs:
           grep -F '127.0.0.1:8788' scripts/loopback.sh
           grep -E 'api/live/status|/dev/tcp' scripts/loopback.sh
           ! grep -F 'npm run dev' scripts/loopback.sh
+          grep -F 'docker run --rm --init -p 127.0.0.1:8788:8788' scripts/loopback.sh
+          ! grep -E 'docker run .*--network[[:space:]]+host' scripts/loopback.sh

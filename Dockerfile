@@ -1,5 +1,7 @@
 # Operator-run live worker: yt-dlp/streamlink + ffmpeg → RTMP(S).
-# Same image ships Vite dist/ so `retrans serve` hosts UI + /api on 127.0.0.1:8788.
+# Same image ships Vite dist/ so `retrans serve` hosts UI + /api.
+# Operator: docker run --rm --init -p 127.0.0.1:8788:8788 IMAGE retrans serve
+# Host bind is 127.0.0.1 only (never 0.0.0.0:8788). Not --network host.
 # Not a clip-only batch image. Backend package layout (do not invent here):
 #   retrans/sources/  retrans/ingest.py  retrans/segment.py  retrans/outputs/x.py
 FROM node:22-bookworm AS ui
