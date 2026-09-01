@@ -57,6 +57,33 @@ class _FakeProc:
         self._code = 0
 
 
+def test_restream_start_refuses_vod_before_ffmpeg():
+    spawned = {}
+
+    class Resolver:
+        def require_live(self, page_url: str) -> None:
+            from retrans.ingest import NotLiveError
+
+            raise NotLiveError("source is not a live stream (not_live); VOD and clips are rejected")
+
+        def resolve(self, page_url: str) -> str:
+            raise AssertionError("must not resolve stream URL for VOD")
+
+    def popen(cmd, **_kwargs):
+        spawned["cmd"] = cmd
+        return _FakeProc(code=None)
+
+    job = XLiveRestream(resolver=Resolver(), popen=popen)
+    with pytest.raises(RestreamError, match="not a live stream|VOD"):
+        job.start(
+            "https://www.youtube.com/watch?v=vod",
+            "rtmps://va.pscp.tv:443/x",
+            "secret-key",
+        )
+    assert "cmd" not in spawned
+    assert job.running() is False
+
+
 def test_restream_start_spawns_ffmpeg_after_resolve():
     spawned = {}
 

@@ -65,7 +65,7 @@ retrans serve
 
 | Method | Path | Body / response |
 | --- | --- | --- |
-| `POST` | `/api/live/start` | JSON `{"source_url":"…","rtmp_url":"…","rtmp_key":"…"}` → `200 {"ok":true,"state":"starting"}` (process up → later status `live`). `400` missing/invalid fields. `409` already running. |
+| `POST` | `/api/live/start` | JSON `{"source_url":"…","rtmp_url":"…","rtmp_key":"…"}` → `200 {"ok":true,"state":"starting"}` (process up → later status `live`). `400` missing/invalid fields **or not a live stream** (VOD / clip / upcoming / ended — ffmpeg/RTMP are not started). `409` already running. |
 | `POST` | `/api/live/stop` | `200 {"ok":true,"state":"stopped"}` (also `200`/`ok` if already idle) |
 | `GET` | `/api/live/status` | `200 {"ok":true,"state":"idle"\|"starting"\|"live"\|"error"\|"stopped","source_url":"…" or null,"error":null or string}` |
 

@@ -4,10 +4,12 @@ import json
 import threading
 from http.client import HTTPConnection
 from http.server import HTTPServer
+from types import SimpleNamespace
 
 import pytest
 
 from retrans.config import LOOPBACK_HOST
+from retrans.ingest import StreamResolver
 from retrans.outputs.x import RestreamError
 from retrans.serve import (
     BindRefused,
@@ -74,12 +76,38 @@ class FailStart:
         return None
 
 
+def _ytdlp_print_run(status: str, calls: list | None = None):
+    """Mock subprocess.run for yt-dlp --print live_status. Never hits the network."""
+
+    def run(argv, **_kwargs):
+        if calls is not None:
+            calls.append(list(argv))
+        if argv[0] != "yt-dlp":
+            raise AssertionError(f"unexpected binary: {argv}")
+        if "-g" in argv:
+            raise AssertionError("live probe must not run yt-dlp -g")
+        if "ffmpeg" in argv[0]:
+            raise AssertionError("ffmpeg must not start")
+        assert "--print" in argv
+        assert "live_status" in argv
+        return SimpleNamespace(stdout=f"{status}\n", stderr="", returncode=0)
+
+    return run
+
+
+def _live_resolver(status: str = "is_live", calls: list | None = None) -> StreamResolver:
+    return StreamResolver(run=_ytdlp_print_run(status, calls=calls))
+
+
 @pytest.fixture
 def api_factory():
     servers = []
 
-    def start(controller: LiveController):
-        httpd = HTTPServer((LOOPBACK_HOST, 0), make_handler(controller))
+    def start(controller: LiveController, resolver: StreamResolver | None = None):
+        httpd = HTTPServer(
+            (LOOPBACK_HOST, 0),
+            make_handler(controller, resolver=resolver or _live_resolver()),
+        )
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
         servers.append(httpd)
@@ -303,3 +331,106 @@ def test_status_acao_reflects_only_exact_loopback_origin(api_factory):
     assert _acao(port, "http://127.0.0.1:8788") == "http://127.0.0.1:8788"
     assert _acao(port, "http://localhost:5173") == "http://localhost:5173"
     assert _acao(port, "http://127.0.0.1.evil.com") is None
+
+
+START_BODY = {
+    "source_url": SOURCE,
+    "rtmp_url": SECRET_URL,
+    "rtmp_key": SECRET_KEY,
+}
+
+
+class MustNotStart:
+    """Restream factory that fails the test if instantiated or started."""
+
+    def __init__(self):
+        raise AssertionError("restream factory must not be called for a non-live URL")
+
+    def start(self, *_a, **_k):
+        raise AssertionError("ffmpeg/RTMP must not start for a non-live URL")
+
+    def wait(self):
+        return 1
+
+    def stop(self):
+        return None
+
+
+def test_start_validates_fields_before_live_probe(api_factory):
+    calls: list[list[str]] = []
+
+    def run(argv, **_kwargs):
+        calls.append(list(argv))
+        raise AssertionError("must not probe yt-dlp before field validation")
+
+    port = api_factory(
+        LiveController(restream_factory=MustNotStart),
+        resolver=StreamResolver(run=run),
+    )
+    code, data, _ = _req(port, "POST", "/api/live/start", {"source_url": SOURCE})
+    assert code == 400
+    assert data["ok"] is False
+    assert "missing" in data["error"]
+    assert calls == []
+
+
+@pytest.mark.parametrize("status", ["not_live", "was_live", "is_upcoming", "", "NA"])
+def test_start_rejects_vod_before_restream(api_factory, status: str):
+    probe_calls: list[list[str]] = []
+    port = api_factory(
+        LiveController(restream_factory=MustNotStart),
+        resolver=_live_resolver(status, calls=probe_calls),
+    )
+    code, data, raw = _req(port, "POST", "/api/live/start", START_BODY)
+    assert code == 400
+    assert data["ok"] is False
+    err = (data.get("error") or "").lower()
+    assert "not a live stream" in err or "vod" in err or "not live" in err
+    assert SECRET_KEY not in raw
+    assert SECRET_URL not in raw
+    assert "rtmp_key" not in data
+    assert "rtmp_url" not in data
+    assert probe_calls
+    assert "-g" not in probe_calls[0]
+
+    st, status_body, _ = _req(port, "GET", "/api/live/status")
+    assert st == 200
+    assert status_body["state"] == "idle"
+    assert status_body["ok"] is True
+
+
+def test_start_proceeds_when_youtube_is_live(api_factory):
+    probe_calls: list[list[str]] = []
+    port = api_factory(
+        LiveController(restream_factory=ImmediateLive),
+        resolver=_live_resolver("is_live", calls=probe_calls),
+    )
+    code, data, raw = _req(port, "POST", "/api/live/start", START_BODY)
+    assert code == 200
+    assert data == {"ok": True, "state": "starting"}
+    assert SECRET_KEY not in raw
+    assert probe_calls
+    assert probe_calls[0][0] == "yt-dlp"
+    assert "--print" in probe_calls[0]
+    assert "live_status" in probe_calls[0]
+
+    for _ in range(50):
+        _, live, _ = _req(port, "GET", "/api/live/status")
+        if live["state"] == "live":
+            break
+        threading.Event().wait(0.05)
+    assert live["state"] == "live"
+    assert live["error"] is None
+    _req(port, "POST", "/api/live/stop")
+
+
+def test_start_rejects_true_only_via_live_status_true_print(api_factory):
+    """--print is_live may emit True; treat that as live."""
+    port = api_factory(
+        LiveController(restream_factory=ImmediateLive),
+        resolver=_live_resolver("True"),
+    )
+    code, data, _ = _req(port, "POST", "/api/live/start", START_BODY)
+    assert code == 200
+    assert data["state"] == "starting"
+    _req(port, "POST", "/api/live/stop")

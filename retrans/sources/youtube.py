@@ -29,10 +29,17 @@ class YouTubeSource:
         return is_youtube_url(page_url)
 
     def resolve(self, page_url: str) -> ResolvedStream:
+        live = False
+        probe = getattr(self._resolver, "is_currently_live", None)
+        if probe is not None:
+            try:
+                live = bool(probe(page_url))
+            except Exception:  # noqa: BLE001 — VOD/probe failure is not live
+                live = False
         stream_url = self._resolver.resolve(page_url)
         return ResolvedStream(
             page_url=page_url,
             stream_url=stream_url,
             plugin=self.name,
-            live=True,
+            live=live,
         )

@@ -23,6 +23,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from retrans.config import X_BEARER_ENV, redact
+from retrans.ingest import NotLiveError
 from retrans.sources import resolve_page
 
 PopenFactory = Callable[..., subprocess.Popen]
@@ -102,9 +103,17 @@ class XLiveRestream:
         dest = join_rtmp_destination(rtmp_url, rtmp_key)
         try:
             if self._resolver is not None:
+                require = getattr(self._resolver, "require_live", None)
+                if require is not None:
+                    require(source_url)
                 stream_url = self._resolver.resolve(source_url)
             else:
-                stream_url = resolve_page(source_url).stream_url
+                resolved = resolve_page(source_url)
+                if not resolved.live:
+                    raise RestreamError(
+                        "source is not a live stream (VOD / not live)"
+                    )
+                stream_url = resolved.stream_url
             cmd = build_ffmpeg_restream_cmd(stream_url, dest)
             self._proc = self._popen(
                 cmd,
@@ -115,6 +124,8 @@ class XLiveRestream:
             )
         except RestreamError:
             raise
+        except NotLiveError as exc:
+            raise RestreamError(str(exc)) from exc
         except Exception as exc:
             raise RestreamError(
                 redact(f"restream failed to start: {exc}", rtmp_url, rtmp_key, dest)

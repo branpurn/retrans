@@ -6,8 +6,13 @@ from retrans.sources.youtube import YouTubeSource, is_youtube_url
 
 
 class FakeResolver:
+    live = True
+
     def resolve(self, page_url: str) -> str:
         return f"https://stream.example/{page_url.split('/')[-1]}"
+
+    def is_currently_live(self, page_url: str) -> bool:
+        return self.live
 
 
 def test_youtube_plugin_matches_common_hosts():
@@ -46,3 +51,25 @@ def test_resolve_page_generic_fallback():
 
 def test_is_youtube_url_nocookie():
     assert is_youtube_url("https://www.youtube-nocookie.com/embed/abc")
+
+
+def test_youtube_resolve_sets_live_false_for_vod():
+    resolver = FakeResolver()
+    resolver.live = False
+    yt = YouTubeSource(resolver=resolver)
+    resolved = yt.resolve("https://www.youtube.com/watch?v=vod")
+    assert resolved.live is False
+    assert resolved.plugin == "youtube"
+
+
+def test_youtube_resolve_sets_live_true_only_when_probe_says_live():
+    yt = YouTubeSource(resolver=FakeResolver())
+    assert yt.resolve("https://www.youtube.com/watch?v=press").live is True
+
+
+def test_generic_resolve_sets_live_from_probe():
+    resolver = FakeResolver()
+    resolver.live = False
+    resolved = GenericSource(resolver=resolver).resolve("https://example.com/clip")
+    assert resolved.live is False
+    assert resolved.plugin == "generic"

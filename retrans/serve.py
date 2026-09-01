@@ -19,6 +19,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from retrans.config import DEFAULT_PORT, HOST_ENV, LOOPBACK_HOST, PORT_ENV, redact
+from retrans.ingest import NotLiveError, ResolveError, StreamResolver
 from retrans.outputs.x import RestreamError, XLiveRestream, join_rtmp_destination
 
 MAX_BODY = 64 * 1024
@@ -212,7 +213,12 @@ def _cors_origin(handler: BaseHTTPRequestHandler) -> str | None:
     return origin
 
 
-def make_handler(controller: LiveController) -> type[BaseHTTPRequestHandler]:
+def make_handler(
+    controller: LiveController,
+    resolver: StreamResolver | None = None,
+) -> type[BaseHTTPRequestHandler]:
+    stream_resolver = resolver or StreamResolver()
+
     class LiveAPIHandler(BaseHTTPRequestHandler):
         def log_message(self, fmt: str, *args: object) -> None:
             return
@@ -271,6 +277,12 @@ def make_handler(controller: LiveController) -> type[BaseHTTPRequestHandler]:
                 self._send(400, {"ok": False, "error": parsed})
                 return
             source_url, rtmp_url, rtmp_key = parsed
+            # Reject VOD / non-live before LiveController.start — no ffmpeg/RTMP.
+            try:
+                stream_resolver.require_live(source_url)
+            except (NotLiveError, ResolveError) as exc:
+                self._send(400, {"ok": False, "error": str(exc)})
+                return
             try:
                 state = controller.start(source_url, rtmp_url, rtmp_key)
             except AlreadyRunning:
@@ -298,13 +310,14 @@ def serve_forever(
     host: str | None = None,
     port: int | None = None,
     controller: LiveController | None = None,
+    resolver: StreamResolver | None = None,
 ) -> None:
     bind_host = normalize_bind_host(host)
     bind_port = resolve_bind_port(port)
     ensure_loopback_bind(bind_host, bind_port)
     httpd = ThreadingHTTPServer(
         (bind_host, bind_port),
-        make_handler(controller or LiveController()),
+        make_handler(controller or LiveController(), resolver=resolver),
     )
     try:
         httpd.serve_forever()
