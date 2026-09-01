@@ -1,0 +1,7 @@
+# Operator loopback UI. Same Vite app as npm run dev — not a second UI.
+# Binds 127.0.0.1 only (package.json / vite.config.js). Never 0.0.0.0.
+FROM node:22-bookworm
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY index.html vite.config.js ./
+COPY src ./src

@@ -32,10 +32,9 @@ services:
 
   ui:
     profiles: ["loopback"]
-    image: node:22-bookworm
-    working_dir: /app
-    volumes:
-      - .:/app
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
     command: sh -c "npm ci && npm run dev"
     network_mode: host
     environment:
