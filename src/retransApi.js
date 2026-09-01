@@ -4,6 +4,7 @@
  * PUT    /api/live/credentials  { rtmp_url, rtmp_key } → 200 { ok, configured:true }
  * GET    /api/live/credentials  → 200 { ok, configured }
  * DELETE /api/live/credentials  → 200 { ok, configured }
+ * GET    /api/live/preview?source_url= → 200 { ok, source_url, title, is_live }
  * POST   /api/live/start  { source_url } when configured → 200 { ok, state:"starting" }
  *        body rtmp_url/rtmp_key still work as a one-shot override
  * POST   /api/live/stop   → 200 { ok, state:"stopped" }
@@ -16,6 +17,7 @@ const START = "/api/live/start";
 const STOP = "/api/live/stop";
 const STATUS = "/api/live/status";
 const CREDENTIALS = "/api/live/credentials";
+const PREVIEW = "/api/live/preview";
 
 /** Redact rtmp_url / rtmp_key substrings only; leave NotLiveError text otherwise unchanged. */
 export function redactSecrets(text, secrets = []) {
@@ -100,6 +102,23 @@ export async function status() {
   return publicStatus(data, res.status);
 }
 
+export async function preview(source_url) {
+  const qs = new URLSearchParams({ source_url: String(source_url ?? "") });
+  const res = await fetch(`${PREVIEW}?${qs}`, { cache: "no-store" });
+  const data = await readBody(res);
+  let error = typeof data.error === "string" ? data.error : "";
+  if (error) error = redactSecrets(error);
+  if (!res.ok && !error) error = "preview failed";
+  return {
+    ok: Boolean(data.ok),
+    source_url: typeof data.source_url === "string" ? data.source_url : "",
+    title: typeof data.title === "string" ? data.title : "",
+    is_live: Boolean(data.is_live),
+    error,
+    httpStatus: res.status,
+  };
+}
+
 export async function credentials() {
   const res = await fetch(CREDENTIALS, { cache: "no-store" });
   const data = await readBody(res);
@@ -133,6 +152,7 @@ export const retransApi = {
   start,
   stop,
   status,
+  preview,
   credentials,
   saveCredentials,
   clearCredentials,

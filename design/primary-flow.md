@@ -143,6 +143,7 @@ Localhost only. Vite proxies `/api` → `http://127.0.0.1:8788`. Never `0.0.0.0`
 | --- | --- | --- |
 | `PUT` | `/api/live/credentials` | `{ "rtmp_url":"…", "rtmp_key":"…" }` → `200` success. Never echo secrets. |
 | `GET` | `/api/live/credentials` | `200 { "configured": true \| false }` **only**. Never echo `rtmp_url` or `rtmp_key`. |
+| `GET` | `/api/live/preview` | Query `source_url`. `200 { "ok": true, "source_url": "…", "title": "…", "is_live": true \| false }`. Title may be `""` if unknown. `is_live` true only for yt-dlp `live_status` `is_live`. YouTube first. `400 { "ok": false, "error": "…" }` missing/invalid URL. No ffmpeg / restream. Never `rtmp_url` / `rtmp_key` / `destination`. |
 | `POST` | `/api/live/start` | `{ "source_url":"…" }` **only** → `200 { "ok": true, "state": "starting" }` (process up → later status `live`). `400` missing/invalid / not a live stream. `409` already running. |
 | `POST` | `/api/live/stop` | existing live API — `200 { "ok": true, "state": "stopped" }` (also `200`/`ok` if already idle) |
 | `GET` | `/api/live/status` | existing live API — `200 { "ok": true, "state": "idle"\|"starting"\|"live"\|"error"\|"stopped", "source_url": "…" or null, "error": null or string }` |

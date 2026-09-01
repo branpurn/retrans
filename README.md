@@ -100,7 +100,7 @@ retrans resolve 'https://www.youtube.com/watch?v=…'
 `retrans serve` **must** listen on `127.0.0.1:8788`. `HOST=0.0.0.0` (and any LAN / hotspot / wildcard bind) is refused with a non-zero exit. There is no `/api/clip` route.
 
 **Sign in** = `PUT /api/live/credentials` or env `RETRANS_X_RTMP_URL` / `RETRANS_X_RTMP_KEY`.  
-**Drop link** = `source_url`.  
+**Drop link** = `source_url`. Preview = `GET /api/live/preview?source_url=` (yt-dlp title + `is_live`; no ffmpeg).  
 **Retrans** = `POST /api/live/start`. Media Studio **Create Broadcast** + **Go Live** are still required. There is no public X OAuth to mint Media Studio RTMP keys — do not invent one.
 
 Credentials persist to `$XDG_CONFIG_HOME/retrans/credentials.json` (else `~/.config/retrans/credentials.json`) at mode **0600**. Env wins over the file on read. `DELETE` removes the file only (does not unset process env). Responses **never** echo `rtmp_url` or `rtmp_key` (not even a masked key). They are never logged.
@@ -113,6 +113,7 @@ retrans serve
 | --- | --- | --- |
 | `PUT` | `/api/live/credentials` | JSON `{"rtmp_url":"…","rtmp_key":"…"}` → `200 {"ok":true,"configured":true}`. `400` empty/invalid (`rtmp://` or `rtmps://` only, same rules as start). Never echoes secrets. |
 | `GET` | `/api/live/credentials` | `200 {"ok":true,"configured":true\|false}`. `configured` is true when both URL and key are present from env or file. Never echoes secrets. |
+| `GET` | `/api/live/preview` | Query `source_url`. `200 {"ok":true,"source_url":"…","title":"…","is_live":true\|false}`. Title may be `""` if unknown. `is_live` is true only when yt-dlp `live_status` is `is_live`. YouTube first (probe via yt-dlp `--print title` / `--print live_status`; no ffmpeg, no restream worker). `400 {"ok":false,"error":"…"}` missing/invalid URL or non-YouTube. GET never returns `rtmp_url`, `rtmp_key`, or `destination`. |
 | `DELETE` | `/api/live/credentials` | Removes the file. `200 {"ok":true,"configured":true\|false}` — still `true` if env is set. |
 | `POST` | `/api/live/start` | JSON `{"source_url":"…"}` is enough when configured. `rtmp_url`/`rtmp_key` in the body still work as a one-shot override. → `200 {"ok":true,"state":"starting"}` (process up → later status `live`). `400` if not configured and body lacks RTMP fields, or invalid fields, **or not a live stream** (VOD / clip / upcoming / ended — ffmpeg/RTMP are not started). `409` already running. |
 | `POST` | `/api/live/stop` | `200 {"ok":true,"state":"stopped"}` (also `200`/`ok` if already idle) |
