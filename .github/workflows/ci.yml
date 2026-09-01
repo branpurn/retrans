@@ -40,6 +40,7 @@ jobs:
           docker compose --profile loopback config | grep -F 'published: "8788"'
           docker compose --profile loopback config | grep -F 'target: 8788'
           docker compose --profile loopback config | grep -F 'init: true'
+          docker compose --profile loopback config | grep -F 'HOST: 0.0.0.0'
           grep -F '127.0.0.1:8788:8788' docker-compose.yml
           grep -F 'HOST: "0.0.0.0"' docker-compose.yml
           ! grep -F 'network_mode: host' docker-compose.yml

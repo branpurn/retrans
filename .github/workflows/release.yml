@@ -71,6 +71,7 @@ jobs:
           docker compose --profile loopback config | grep -F 'published: "8788"'
           docker compose --profile loopback config | grep -F 'target: 8788'
           docker compose --profile loopback config | grep -F 'init: true'
+          docker compose --profile loopback config | grep -F 'HOST: 0.0.0.0'
           ! docker compose --profile loopback config | grep -F '5173'
           ! docker compose --profile loopback config | grep -F 'network_mode: host'
           ! docker compose --profile loopback config | grep -F '0.0.0.0:8788'
