@@ -15,9 +15,11 @@ NOT `--network host`. Not 0.0.0.0. Not Vite 5173. Not a git clone.
 
 ## Use
 
+Menu: **Keys** · **Drop link** · **Outbound**. One pane at a time.
+
 **Keys / Configuration** = named stream keys only (RTMP URL hidden). `?` for Media Studio Sources.
 
-Drop a live URL → Retrans. You must have permission or fair use.
+Drop a live URL → Retrans. You must have permission or fair use. Outbound is the encoded player (empty until Backend names the tee).
 
 ## Playlist
 
