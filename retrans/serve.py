@@ -5,7 +5,7 @@ LAN / hotspot address) is refused with a non-zero exit. Responses never
 echo rtmp_url or rtmp_key. There is no /api/clip route.
 
 Sign in: PUT /api/live/credentials (or env). Drop link: source_url.
-Preview: GET /api/live/preview?source_url= (yt-dlp title + is_live; no ffmpeg).
+Preview: GET /api/live/preview?source_url= (yt-dlp -J title + is_live; no ffmpeg).
 Retrans: POST /api/live/start (fills RTMP from store when body omits it).
 """
 
@@ -401,7 +401,7 @@ def make_handler(
             self._send(200, controller.public_status())
 
         def _preview(self) -> None:
-            """Drop-link preview: yt-dlp title + live_status. No ffmpeg / restream."""
+            """Drop-link preview: yt-dlp -J title + is_live. No ffmpeg / restream."""
             raw = preview_query_source_url(self.path)
             if raw is None or raw == "":
                 self._send(400, {"ok": False, "error": "missing source_url"})
@@ -413,12 +413,12 @@ def make_handler(
             if not is_youtube_url(source):
                 self._send(400, {"ok": False, "error": "YouTube first"})
                 return
-            title = ""
-            is_live = False
             try:
                 title, is_live = stream_resolver.preview_meta(source)
-            except ResolveError:
-                title, is_live = "", False
+            except ResolveError as exc:
+                # Probe failure is not VOD. Do not return 200 title="" is_live=false.
+                self._send(502, {"ok": False, "error": str(exc)})
+                return
             self._send(
                 200,
                 {

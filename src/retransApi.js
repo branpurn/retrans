@@ -5,6 +5,7 @@
  * GET    /api/live/credentials  → 200 { ok, configured }
  * DELETE /api/live/credentials  → 200 { ok, configured }
  * GET    /api/live/preview?source_url= → 200 { ok, source_url, title, is_live }
+ *        probe fail → 502 { ok:false, error } (not 200 empty/false)
  * POST   /api/live/start  { source_url } when configured → 200 { ok, state:"starting" }
  *        body rtmp_url/rtmp_key still work as a one-shot override
  * POST   /api/live/stop   → 200 { ok, state:"stopped" }
