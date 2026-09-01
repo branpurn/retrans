@@ -64,6 +64,8 @@ Chrome lock for Drop link / Retrans. Backend ingest owns roll. No extra routes. 
 4. Keep 3-beat 480px. Beat 3 shows the current item + compact playlist position (e.g. `2/5`) without a settings maze. Preview / LIVE badge rules still apply per current item (LIVE badge iff `is_live === true` on 200 ok).
 5. Product “True LIVE only / Not VOD” is softened only so the playlist may include VOD items that roll. Still **not** clip-post, not file upload, never Posted / Clip / Tweet / Upload UI.
 
+Outbound monitor (picture + sound of the encoded outbound) is **Beat 3 only**. Do not put it on Drop link or Keys / Configuration. Do not restomp this playlist chrome.
+
 ## Boot / routing
 
 On load:
@@ -148,7 +150,7 @@ Ordered **source-URL list** on this beat. Operator can add / reorder / remove pa
 
 ### Preview card chrome (Beat 2 + Beat 3 compact)
 
-Consume `GET /api/live/preview` for `title` + `is_live`. Same LIVE badge + real title rules on the Beat 3 compact preview.
+Consume `GET /api/live/preview` for `title` + `is_live`. Same LIVE badge + real title rules on the Beat 3 compact preview. This card is **source preview** metadata. The Beat 3 **Outbound** player is the encoded outbound — not this card, not a YouTube embed.
 
 Preview card fields:
 
@@ -198,7 +200,8 @@ Keep three beats and 480px. Concurrent restreams live on this beat (not a fourth
 | Element | Rule |
 | --- | --- |
 | Sessions | Compact list from `status.sessions[]`: current source + compact playlist position (e.g. `2/5`) + **named** key + per-session pill/status + **Stop** |
-| Source | Compact source preview for the **current** item — same card fields as Beat 2 (thumbnail, real `title` when available, host, **LIVE** badge iff `is_live === true` on 200 ok for the current item) + playlist position (`2/5`) + the top-bar status pill. No playlist editor maze on this beat. |
+| Source | Compact source preview for the **current** item — same card fields as Beat 2 (thumbnail, real `title` when available, host, **LIVE** badge iff `is_live === true` on 200 ok for the current item) + playlist position (`2/5`) + the top-bar status pill. No playlist editor maze on this beat. This card is **not** the Outbound player. |
+| Outbound | Compact native HTML `video` (or equivalent same-origin media element) on this existing 480px console. Picture + sound. Visual label **Outbound** (Designer lock — not Preview, not YouTube, not Monitor maze, not Clip). Encoded outbound monitor — same bytes as X RTMP — not the Source preview card. One player per session row. See below. |
 | Primary | **Start live retrans** — enabled when ready |
 | Another | **Drop another** / back to Beat 2 using an unused named key (a new playlist run). If none unused, helper to add a key → Beat 1 |
 | Danger | **Stop** — per session, stops the playlist run (not skip-current-only). Enabled while that session is LIVE **or** Error |
@@ -227,7 +230,17 @@ Helper (exact; fully readable, never clipped):
 - While LIVE: `Retransmitting live to X`
 - On Error with a nonempty `status.error` / session `error` / start error string: show that API error string **as-is** (redact rtmp secrets only). Do not rewrite it.
 
-**Not on this beat:** RTMP URL field, stream key field, destination form, clip, download, schedule, OAuth, settings. Sessions list shows **names only**, never keys.
+**Not on this beat:** RTMP URL field, stream key field, destination form, clip, download, schedule, OAuth, settings. No YouTube embed / iframe / youtube.com player. No clip download from the Outbound player. Sessions list shows **names only**, never keys.
+
+### Outbound (Beat 3 only)
+
+While Retrans is running, the operator watches and hears the actual encoded outbound (the same bytes going to X RTMP) on `http://127.0.0.1:8788`. KISS player on this existing 3-beat 480px console. Designer owns the visual label **Outbound**. Frontend may use that word. Do not invent a settings heading. Copywriter is off — Frontend owns exact UI strings.
+
+- **Where.** Beat 3 only. One compact player per session row (same named key / session). Keep 480px. No fourth page. Playlist roll: the player follows the **current** item’s outbound (same `key_id`). Do not restomp playlist `2/5` chrome.
+- **Show.** While that session is Starting or LIVE. Starting may have no frames yet — keep the player chrome; never fill with a YouTube embed or preview thumbnail as a fake. Hide the player on Idle / Stopped. Error: do not replace the player with clip UI; Stop still clears Error.
+- **Sound.** On by default (localhost operator). Native controls are enough (play/pause + volume). No extra toolbar. No `download` attribute. No PiP settings page. No quality picker maze.
+- **Bytes.** Same origin `http://127.0.0.1:8788` only. Bind **127.0.0.1 only**. No second port. No Vite `5173` operator path. The bytes in the player MUST be the encoded outbound (tee of what is pushed to X RTMP), not the YouTube ingest URL and not `GET /api/live/preview` JSON.
+- **Not.** Not a YouTube embed / iframe / youtube.com player. Not clip download, not file save, not Posted / Clip / Tweet / Upload UI. Not the Drop-link `GET /api/live/preview` metadata card (title / `is_live` / thumbnail is source preview; this is the outbound encode).
 
 After Start, `GET /api/live/status` (`sessions[]`) drives per-session pills (`starting` → Starting, then `live` → LIVE) except Error, which sticks until Stop. Poll fail stays the current pill (Idle on fresh load). Never invent Error from a poll fail.
 
@@ -235,7 +248,7 @@ After Start, `GET /api/live/status` (`sessions[]`) drives per-session pills (`st
 
 Operator path is **one Docker compose** → `http://127.0.0.1:8788` (same origin UI + `/api`). Vite may still proxy `/api` → `http://127.0.0.1:8788` for Frontend work; operators open 8788. Never `0.0.0.0`. No `/api/clip` route. No clip UI. No `/api/live/credentials` chrome — Keys / Configuration consumes `/api/live/keys`.
 
-These routes are the lock. Do not invent extra routes beyond keys list/add/delete + start/stop/status/preview. Playlist chrome is start/status fields only (no playlist editor route).
+These routes are the lock. Do not invent extra routes beyond keys list/add/delete + start/stop/status/preview + **one** same-origin outbound media path per running session. Playlist chrome is start/status fields only (no playlist editor route). Do not add clip, download, or VOD export routes. Outbound monitor is Beat 3 only — **not** `GET /api/live/preview`.
 
 | Method | Path | Body / response |
 | --- | --- | --- |
@@ -246,13 +259,14 @@ These routes are the lock. Do not invent extra routes beyond keys list/add/delet
 | `POST` | `/api/live/start` | Chrome lock: `{ "source_urls":["…", "…"], "key_id":"…" }` — ordered page URLs (live or VOD) + the selected named key. One URL = one-item `source_urls` list. Bare `{ "source_url":"…", "key_id":"…" }` may remain as a one-item playlist (Backend ingest owns that path). → `200 { "ok": true, "state": "starting" }` (process up → later status `live`; roll updates current `source_url` / `source_index`). Never `rtmp_url` / `rtmp_key`. `400` missing/invalid / empty `source_urls`. Do **not** `400` `source_urls` solely because an item is VOD. `409` key already in a live/starting session. Same `key_id` for the whole run — do not re-Select per item. |
 | `POST` | `/api/live/stop` | `{ "session_id":"…" }` **or** `{ "key_id":"…" }` → `200 { "ok": true, "state": "stopped" }` (also `200`/`ok` if that session already idle) |
 | `GET` | `/api/live/preview` | Query `source_url`. `127.0.0.1:8788`. Response `{ "ok", "source_url", "title", "is_live" }` **only**. No `rtmp_url` / `rtmp_key`. Never echo secrets. **LIVE** badge iff `is_live === true` on 200 ok. Show real `title` (not a synthetic `YouTube source <id>` placeholder). Same-route **502** `{ ok: false, error }` chrome: Beat 2 Preview (hide card; no LIVE badge; `error` as-is; Continue disabled; pill stays Idle). |
-| `GET` | `/api/live/status` | `200` includes `sessions[]` (concurrent restreams / playlist runs): `{ session_id, key_id, name, source_url, source_index, state, error }` — names only, never keys. `source_url` is the **current** item. `source_index` is the chrome lock (0-based current item). Beat 3 compact position is `{source_index + 1}/{n}` (e.g. `2/5`) using the ordered list chrome already sent. `state` is `idle`\|`starting`\|`live`\|`error`\|`stopped`. Exhausted playlist → `idle` / `stopped`, not Error. Pill / Error-stick apply **per session** where chrome shows them. Never echo `rtmp_key` or `rtmp_url`. Never echo secrets. |
+| `GET` | `/api/live/status` | `200` includes `sessions[]` (concurrent restreams / playlist runs): `{ session_id, key_id, name, source_url, source_index, state, error }` — names only, never keys. `source_url` is the **current** item. `source_index` is the chrome lock (0-based current item). Beat 3 compact position is `{source_index + 1}/{n}` (e.g. `2/5`) using the ordered list chrome already sent. `state` is `idle`\|`starting`\|`live`\|`error`\|`stopped`. Exhausted playlist → `idle` / `stopped`, not Error. Pill / Error-stick apply **per session** where chrome shows them. Never echo `rtmp_key` or `rtmp_url`. Never echo secrets. Optional same-origin `outbound_url` (path only, `127.0.0.1:8788`) for the Beat 3 Outbound player is ok — still names only, never keys. Not `GET /api/live/preview`. |
+| `GET` | outbound media for a running session | Same-origin media for the Beat 3 **Outbound** player (`session_id` or `key_id`). Path under `/api/live/…` or `/live/…` (HLS / fMP4 or equivalent). **Not** `GET /api/live/preview`. Backend/Infra own the tap — do not invent a maze. Chrome consumes the path. Never echo secrets. Never return `rtmp_url` / `rtmp_key`. No clip / download / VOD export. |
 
 Responses **never** echo `rtmp_key` or `rtmp_url` (or the key value). Redact those substrings in any error string shown in the UI. `GET` never returns `rtmp_key` / `rtmp_url`.
 
 `POST /api/live/start` does **not** accept raw destination fields. Destination is the selected named `key_id` (same `key_id` for the whole playlist run).
 
-Consume `GET /api/live/preview` for `title` + `is_live`. Status poll fail stays Idle (Error chrome locks above). Error sticks until Stop.
+Consume `GET /api/live/preview` for `title` + `is_live` (source preview metadata only — not outbound media). Status poll fail stays Idle (Error chrome locks above). Error sticks until Stop. Beat 3 Outbound consumes the same-origin outbound media path (tee of X RTMP), never preview JSON and never a YouTube embed.
 
 ## Tokens
 
@@ -277,8 +291,8 @@ Reuse [layout-v1.md](layout-v1.md) `:root` tokens:
 
 ## Out of primary
 
-No settings pages. No clip-post. No clip download. No schedule. No OAuth screens. No Sign-in framing. No “Sign in with X”. No showing keys after save. No `/api/live/credentials` chrome. No Media Studio maze beyond the Beat 1 `?` disclosure (same-beat inline help; default helper stays the one short line). No playlist editor maze (Beat 2 is an ordered URL list; Beat 3 is current item + `2/5` only). No five-block 720px chrome. No Vite `5173` operator path. No second published port. Playlist may include VOD items that roll; still not clip-post, not file upload, never Posted / Clip / Tweet / Upload UI.
+No settings pages. No clip-post. No clip download. No clip download from the Outbound player. No schedule. No OAuth screens. No Sign-in framing. No “Sign in with X”. No showing keys after save. No `/api/live/credentials` chrome. No Media Studio maze beyond the Beat 1 `?` disclosure (same-beat inline help; default helper stays the one short line). No playlist editor maze (Beat 2 is an ordered URL list; Beat 3 is current item + `2/5` only). No five-block 720px chrome. No Vite `5173` operator path. No second published port. No YouTube embed / iframe / youtube.com player. No treating outbound as preview metadata (`GET /api/live/preview` title / `is_live` / thumbnail is source preview). Playlist may include VOD items that roll; still not clip-post, not file upload, never Posted / Clip / Tweet / Upload UI.
 
 ## Done when
 
-Frontend can ship the three beats against this file without inventing chrome, OAuth, Sign-in framing, or clip UI. Beat 1 is **Keys / Configuration** (default ingest, Advanced off, named key list with Open / Edit / Select / Delete, clickable `?`). Not a Sign-in gate. Do not restomp that panel. Beat 2 is an ordered source-URL list (live or VOD; add / reorder / remove). The selected named key stays across roll. Beat 3 shows the current item + compact position (`2/5`); roll next when the current item ends; Stop stops the session; exhausted playlist is Idle / Stopped, not Error. Operator form factor is one Docker compose on `http://127.0.0.1:8788`.
+Frontend can ship the three beats against this file without inventing chrome, OAuth, Sign-in framing, or clip UI. Beat 1 is **Keys / Configuration** (default ingest, Advanced off, named key list with Open / Edit / Select / Delete, clickable `?`). Not a Sign-in gate. Do not restomp that panel. Beat 2 is an ordered source-URL list (live or VOD; add / reorder / remove). The selected named key stays across roll. Beat 3 shows the current item + compact position (`2/5`); roll next when the current item ends; Stop stops the session; exhausted playlist is Idle / Stopped, not Error. Frontend can put a KISS **Outbound** player on Beat 3 against this file without inventing chrome (picture + sound of the encoded outbound on `http://127.0.0.1:8788`; not a YouTube embed; not clip; not preview metadata). Operator form factor is one Docker compose on `http://127.0.0.1:8788`.
