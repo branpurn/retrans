@@ -4,10 +4,11 @@
 #
 # Live worker: `docker compose --profile live up --build` (no host bind).
 # Loopback (Linux host network): `docker compose --profile loopback up --build`
-#   serve + ui only — does not start the live ffmpeg worker.
-#   serve + ui bind 127.0.0.1 on the host. Never 0.0.0.0 / LAN / hotspot.
+#   ONE service: retrans serve on 127.0.0.1:8788 hosts dist/ + /api (same-origin).
+#   Does not start the live ffmpeg worker. Does not start Vite.
 #   Host network is required: publishing 8788:8788 would need the process to
 #   listen on 0.0.0.0 inside the container, which retrans serve refuses.
+#   Live service has no container_name so more than one keyed worker can run.
 services:
   retrans:
     profiles: ["live"]
@@ -41,18 +42,3 @@ services:
       timeout: 2s
       retries: 5
       start_period: 3s
-
-  ui:
-    profiles: ["loopback"]
-    image: node:22-bookworm
-    working_dir: /app
-    volumes:
-      - .:/app
-    command: sh -c "npm ci && npm run dev"
-    network_mode: host
-    environment:
-      HOST: "127.0.0.1"
-    depends_on:
-      serve:
-        condition: service_healthy
-    init: true

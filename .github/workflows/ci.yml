@@ -21,11 +21,19 @@ jobs:
       - name: Compose live profile
         run: docker compose --profile live config
       - name: Compose loopback profile
-        run: docker compose --profile loopback config
-      - name: Live tools (ffmpeg, yt-dlp, streamlink)
+        run: |
+          docker compose --profile loopback config
+          # ONE service — no Vite ui / 5173, no published 8788:8788
+          test "$(docker compose --profile loopback config --services | wc -l)" -eq 1
+          ! docker compose --profile loopback config --services | grep -qx ui
+          ! docker compose --profile loopback config | grep -E '5173|8788:8788'
+          docker compose --profile loopback config | grep -F 'network_mode: host'
+          docker compose --profile loopback config | grep -F '127.0.0.1'
+      - name: Live tools (ffmpeg, yt-dlp, streamlink) and dist/
         run: |
           docker run --rm --entrypoint bash retrans:ci -c '
             set -euo pipefail
+            test -f /app/dist/index.html
             command -v ffmpeg
             command -v yt-dlp
             command -v streamlink
@@ -76,8 +84,9 @@ jobs:
           set -e
           printf '%s\n' "$output"
           printf '%s\n' "$output" | grep -Eivq 'refusing HOST'
-          printf '%s\n' "$output" | grep -Eiq 'retrans not on PATH|npm not on PATH'
-      - name: Script probes 127.0.0.1:8788 before UI
+          printf '%s\n' "$output" | grep -Eiq 'retrans not on PATH'
+      - name: Script probes 127.0.0.1:8788 (no Vite)
         run: |
           grep -F '127.0.0.1:8788' scripts/loopback.sh
           grep -E 'api/live/status|/dev/tcp' scripts/loopback.sh
+          ! grep -F 'npm run dev' scripts/loopback.sh
