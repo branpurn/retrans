@@ -11,6 +11,8 @@ docker rm -f retrans; docker run --rm --init -p 127.0.0.1:8788:8788 --name retra
 
 Open http://127.0.0.1:8788
 
+NOT `--network host`. Not 0.0.0.0. Not Vite 5173. Not a git clone.
+
 ## Use
 
 **Sign in** = named stream keys only (RTMP URL hidden). `?` for Media Studio Sources.
