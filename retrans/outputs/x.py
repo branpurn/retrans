@@ -116,11 +116,22 @@ class XLiveRestream:
         self._stderr_lines: deque[str] = deque(maxlen=_STDERR_TAIL)
         self._stderr_thread: threading.Thread | None = None
 
-    def start(self, source_url: str, rtmp_url: str, rtmp_key: str) -> None:
+    def start(
+        self,
+        source_url: str,
+        rtmp_url: str,
+        rtmp_key: str,
+        *,
+        require_live: bool = True,
+    ) -> None:
         """Resolve + spawn ffmpeg. Returns once the process is running.
 
         One instance, one spawn. A dead or running proc cannot be started
         again — LiveController must construct a new XLiveRestream.
+
+        require_live=True (default, single-URL live path) rejects VOD.
+        Playlist items pass require_live=False so VOD and live both encode
+        through the same ffmpeg restream command.
         """
         if self._proc is not None:
             raise RestreamError(
@@ -132,13 +143,14 @@ class XLiveRestream:
         self._dest = dest
         try:
             if self._resolver is not None:
-                require = getattr(self._resolver, "require_live", None)
-                if require is not None:
-                    require(source_url)
+                if require_live:
+                    require = getattr(self._resolver, "require_live", None)
+                    if require is not None:
+                        require(source_url)
                 stream_url = self._resolver.resolve(source_url)
             else:
                 resolved = resolve_page(source_url)
-                if not resolved.live:
+                if require_live and not resolved.live:
                     raise RestreamError(
                         "source is not a live stream (VOD / not live)"
                     )
