@@ -2,6 +2,9 @@
 
 Priority: live YouTube (press conferences, briefings). Uses yt-dlp first,
 then streamlink as a fallback. Both are operator-installed CLI tools.
+
+A live-status probe runs before restream: only currently live pages are
+accepted. VOD, clips, upcoming, and ended livestreams are rejected.
 """
 
 from __future__ import annotations
@@ -14,7 +17,29 @@ class ResolveError(RuntimeError):
     """Page URL could not be resolved to a stream."""
 
 
+class NotLiveError(ResolveError):
+    """Page URL is not a currently live stream (VOD / clip / upcoming / ended)."""
+
+
 Runner = Callable[..., subprocess.CompletedProcess]
+
+# yt-dlp live_status / --print is_live values that mean "on air now".
+_LIVE_STATUS_OK = frozenset({"is_live"})
+_LIVE_BOOL_OK = frozenset({"true", "1", "yes"})
+
+
+def status_is_live(live_status: str, is_live: object = None) -> bool:
+    """True only for a current livestream (live_status is_live or is_live true)."""
+    status = (live_status or "").strip()
+    if status in _LIVE_STATUS_OK:
+        return True
+    if status.lower() in _LIVE_BOOL_OK:
+        return True
+    if is_live is True:
+        return True
+    if isinstance(is_live, str) and is_live.strip().lower() in _LIVE_BOOL_OK:
+        return True
+    return False
 
 
 class StreamResolver:
@@ -22,6 +47,59 @@ class StreamResolver:
 
     def __init__(self, run: Runner | None = None) -> None:
         self._run = run or subprocess.run
+
+    def live_status(self, page_url: str) -> str:
+        """Return yt-dlp live_status (is_live, not_live, was_live, is_upcoming, …)."""
+        try:
+            proc = self._run(
+                [
+                    "yt-dlp",
+                    "--print",
+                    "live_status",
+                    "--no-playlist",
+                    "--no-warnings",
+                    page_url,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except FileNotFoundError as exc:
+            raise ResolveError("yt-dlp is not installed") from exc
+        except subprocess.CalledProcessError as exc:
+            stderr = (exc.stderr or "").strip()
+            raise ResolveError(f"yt-dlp live probe failed: {stderr}") from exc
+        for line in (proc.stdout or "").splitlines():
+            candidate = line.strip()
+            if candidate:
+                return candidate
+        return ""
+
+    def is_currently_live(self, page_url: str) -> bool:
+        """True when yt-dlp reports live_status is_live (or is_live true)."""
+        try:
+            return status_is_live(self.live_status(page_url))
+        except ResolveError:
+            return False
+
+    def require_live(self, page_url: str) -> None:
+        """Raise NotLiveError unless the page is a current livestream.
+
+        Accepts only live_status ``is_live`` (or is_live true). Rejects
+        not_live, was_live, is_upcoming, missing, VOD, and clips.
+        """
+        try:
+            status = self.live_status(page_url)
+        except ResolveError as exc:
+            raise NotLiveError(
+                f"could not confirm live stream (VOD / not live): {exc}"
+            ) from exc
+        if status_is_live(status):
+            return
+        label = status if status else "missing"
+        raise NotLiveError(
+            f"source is not a live stream ({label}); VOD and clips are rejected"
+        )
 
     def resolve(self, page_url: str) -> str:
         last_error: Exception | None = None
