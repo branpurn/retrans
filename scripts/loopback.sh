@@ -29,6 +29,9 @@ ui_pid=""
 cleanup() {
   trap - EXIT INT TERM HUP
   if [[ -n "${serve_pid}" ]]; then
+    if command -v pkill >/dev/null 2>&1; then
+      pkill -P "${serve_pid}" 2>/dev/null || true
+    fi
     kill "${serve_pid}" 2>/dev/null || true
   fi
   if [[ -n "${ui_pid}" ]]; then
