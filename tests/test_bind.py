@@ -108,10 +108,13 @@ def test_readme_does_not_claim_host_wildcard_publish():
     assert "retrans serve" in readme
     assert "NOT `--network host`" in readme
     run_line = next(line for line in readme.splitlines() if "docker run --rm --init" in line)
+    assert "docker rm -f retrans" in run_line
+    assert "-p 127.0.0.1:8788:8788" in run_line
     assert "--name retrans" in run_line
     assert "retrans serve" in run_line
     assert "--network host" not in run_line
     assert "0.0.0.0" not in run_line
+    assert ";" in run_line
 
 
 def test_readme_headless_has_no_host_wildcard_or_publish():
